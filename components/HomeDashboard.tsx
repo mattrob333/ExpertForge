@@ -1,15 +1,32 @@
 
 import React from 'react';
-import { ExpertPersona, PersonalityDirection } from '../types';
+import { ExpertPersona, PersonalityDirection, TeamContext } from '../types';
+import { TeamContextWithId } from '../services/storageService';
 import ExpertForm from './ExpertForm';
 
 interface HomeDashboardProps {
   experts: ExpertPersona[];
+  teams?: TeamContextWithId[];
   onSummon: (description: string, direction?: PersonalityDirection) => void;
   onSelectExpert: (expert: ExpertPersona) => void;
+  onCreateTeam?: () => void;
+  onSelectTeam?: (team: TeamContextWithId) => void;
+  onGoChat?: () => void;
+  onGoLegends?: () => void;
+  onLogout?: () => void;
 }
 
-const HomeDashboard: React.FC<HomeDashboardProps> = ({ experts, onSummon, onSelectExpert }) => {
+const HomeDashboard: React.FC<HomeDashboardProps> = ({ 
+  experts, 
+  teams = [],
+  onSummon, 
+  onSelectExpert,
+  onCreateTeam,
+  onSelectTeam,
+  onGoChat,
+  onGoLegends,
+  onLogout,
+}) => {
   return (
     <div className="max-w-6xl w-full mx-auto px-4 py-12 space-y-20 animate-in fade-in duration-700">
       {/* Hero Header */}
@@ -71,6 +88,114 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({ experts, onSummon, onSele
           <div className="h-px flex-1 bg-slate-800"></div>
         </div>
         <ExpertForm onSubmit={onSummon} />
+      </section>
+
+      {/* Your Teams Section */}
+      <section className="space-y-8">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xs font-mono font-bold uppercase tracking-[0.3em] text-slate-500">YOUR TEAMS</h2>
+          <div className="h-px flex-1 bg-slate-800"></div>
+          {onCreateTeam && (
+            <button 
+              onClick={onCreateTeam}
+              className="px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-full text-purple-400 text-[10px] font-mono uppercase tracking-widest hover:bg-purple-500/20 transition-all"
+            >
+              + Create Team
+            </button>
+          )}
+        </div>
+
+        {teams.length === 0 ? (
+          <div className="group relative bg-[#0f172a]/30 border border-dashed border-slate-800 rounded-3xl p-12 text-center transition-all hover:border-purple-500/30">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-3xl"></div>
+            <div className="relative z-10">
+              <p className="text-slate-500 font-mono text-sm uppercase tracking-widest">
+                No teams created yet.
+              </p>
+              <p className="text-slate-600 text-xs mt-2">
+                Build an AI-powered org chart to tackle your objectives.
+              </p>
+              {onCreateTeam && (
+                <button 
+                  onClick={onCreateTeam}
+                  className="mt-6 px-6 py-3 bg-gradient-to-r from-purple-600 to-cyan-600 rounded-xl text-white text-sm font-bold hover:from-purple-500 hover:to-cyan-500 transition-all shadow-lg shadow-purple-900/20"
+                >
+                  Create Your First Team
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {teams.map((team, i) => (
+              <button
+                key={i}
+                onClick={() => onSelectTeam?.(team)}
+                className="group relative flex flex-col gap-4 bg-[#0f172a] border border-slate-800 p-6 rounded-2xl text-left hover:border-purple-500/50 hover:bg-slate-900 transition-all"
+              >
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-cyan-600 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-2xl"></div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-white font-bold text-lg">{team.name}</h3>
+                  <span className="px-3 py-1 bg-purple-500/10 text-purple-400 text-[10px] font-mono uppercase rounded-full">
+                    {team.type}
+                  </span>
+                </div>
+                <p className="text-slate-500 text-sm line-clamp-2">{team.description}</p>
+                <div className="flex flex-wrap gap-2">
+                  {team.needs.slice(0, 3).map((need) => (
+                    <span key={need} className="px-2 py-1 bg-slate-800 text-slate-500 text-[10px] rounded">
+                      {need}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Quick Actions */}
+      <section className="space-y-8">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xs font-mono font-bold uppercase tracking-[0.3em] text-slate-500">QUICK ACTIONS</h2>
+          <div className="h-px flex-1 bg-slate-800"></div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {onGoChat && experts.length > 0 && (
+            <button
+              onClick={onGoChat}
+              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-cyan-500/50 transition-all group"
+            >
+              <span className="text-3xl group-hover:scale-110 transition-transform">💬</span>
+              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-cyan-400 transition-colors">Team Chat</span>
+            </button>
+          )}
+          {onCreateTeam && (
+            <button
+              onClick={onCreateTeam}
+              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-purple-500/50 transition-all group"
+            >
+              <span className="text-3xl group-hover:scale-110 transition-transform">🎯</span>
+              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-purple-400 transition-colors">Build Team</span>
+            </button>
+          )}
+          <button
+            onClick={onGoLegends}
+            className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-amber-500/50 transition-all group"
+          >
+            <span className="text-3xl group-hover:scale-110 transition-transform">🏆</span>
+            <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-amber-400 transition-colors">Legends</span>
+          </button>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-red-500/50 transition-all group"
+            >
+              <span className="text-3xl group-hover:scale-110 transition-transform">🚪</span>
+              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-red-400 transition-colors">Log Out</span>
+            </button>
+          )}
+        </div>
       </section>
     </div>
   );

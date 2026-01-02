@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { ExpertPersona } from '../types';
+import { ExpertPersona, ExpertResource, ResourceRecommendations } from '../types';
+import { getExpertResources, saveExpertResource, deleteExpertResource } from '../services/storageService';
+import { generateResourceRecommendations, autoPopulateAllResources } from '../services/geminiService';
 
 interface ExpertCardProps {
   persona: ExpertPersona;
@@ -11,10 +13,150 @@ interface ExpertCardProps {
 const ExpertCard: React.FC<ExpertCardProps> = ({ persona, onRestart, onOpenTraining }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'expertise' | 'thinking' | 'personality'>('overview');
   const [visible, setVisible] = useState(false);
+  
+  // Resources state
+  const [resources, setResources] = useState<ExpertResource[]>([]);
+  const [showResourcesModal, setShowResourcesModal] = useState(false);
+  const [showRecommendations, setShowRecommendations] = useState(false);
+  const [recommendations, setRecommendations] = useState<ResourceRecommendations | null>(null);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const [autoPopulating, setAutoPopulating] = useState(false);
+  const [populateProgress, setPopulateProgress] = useState({ current: 0, total: 0, item: '' });
+  const [newResource, setNewResource] = useState({
+    title: '',
+    description: '',
+    resourceType: 'url' as ExpertResource['resourceType'],
+    url: '',
+    content: '',
+  });
+  const [savingResource, setSavingResource] = useState(false);
+  const [expandedResource, setExpandedResource] = useState<ExpertResource | null>(null);
 
   useEffect(() => {
     setVisible(true);
   }, []);
+
+  // Load resources when persona changes
+  useEffect(() => {
+    if (persona.id) {
+      getExpertResources(persona.id).then(setResources);
+    }
+  }, [persona.id]);
+
+  const handleAskForResources = async () => {
+    setLoadingRecommendations(true);
+    setShowRecommendations(true);
+    try {
+      const result = await generateResourceRecommendations(persona);
+      setRecommendations(result);
+    } catch (err) {
+      console.error('Failed to generate recommendations:', err);
+      setRecommendations({ 
+        introduction: 'I apologize, but I encountered an issue generating my resource recommendations. Please try again.',
+        resources: []
+      });
+    } finally {
+      setLoadingRecommendations(false);
+    }
+  };
+
+  const handleAutoPopulate = async () => {
+    if (!recommendations || recommendations.resources.length === 0) return;
+    
+    setAutoPopulating(true);
+    try {
+      const results = await autoPopulateAllResources(
+        recommendations,
+        persona,
+        (current, total, item) => setPopulateProgress({ current, total, item })
+      );
+      
+      // Save populated resources to storage (only those that weren't skipped)
+      for (const result of results) {
+        if (!result.skipped && result.content) {
+          await saveExpertResource(persona.id, {
+            title: result.resource.title,
+            description: result.resource.description,
+            resourceType: result.resource.category === 'book' ? 'book' : 
+                          result.resource.category === 'website' ? 'url' : 'document',
+            content: result.content,
+            url: result.url,
+            isRecommended: true,
+            isAttached: true,
+          });
+        }
+      }
+      
+      // Log skipped resources for user awareness
+      const skipped = results.filter(r => r.skipped);
+      if (skipped.length > 0) {
+        console.log(`Skipped ${skipped.length} resources that require manual configuration:`, 
+          skipped.map(s => `${s.resource.title}: ${s.skipReason}`));
+      }
+      
+      // Refresh resources list
+      const updatedResources = await getExpertResources(persona.id);
+      setResources(updatedResources);
+      setShowRecommendations(false);
+    } catch (err) {
+      console.error('Failed to auto-populate resources:', err);
+    } finally {
+      setAutoPopulating(false);
+      setPopulateProgress({ current: 0, total: 0, item: '' });
+    }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'capability': return '⚡';
+      case 'book': return '📚';
+      case 'website': return '🌐';
+      case 'document': return '📄';
+      case 'data': return '📊';
+      default: return '📦';
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'required': return 'text-red-400 bg-red-500/10 border-red-500/30';
+      case 'recommended': return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+      case 'nice-to-have': return 'text-slate-400 bg-slate-500/10 border-slate-500/30';
+      default: return 'text-slate-400';
+    }
+  };
+
+  const handleAddResource = async () => {
+    if (!persona.id || !newResource.title.trim()) return;
+    
+    setSavingResource(true);
+    try {
+      const saved = await saveExpertResource(persona.id, {
+        title: newResource.title.trim(),
+        description: newResource.description.trim() || undefined,
+        resourceType: newResource.resourceType,
+        url: newResource.url.trim() || undefined,
+        content: newResource.content.trim() || undefined,
+      });
+      setResources(prev => [saved, ...prev]);
+      setNewResource({ title: '', description: '', resourceType: 'url', url: '', content: '' });
+      setShowResourcesModal(false);
+    } catch (err) {
+      console.error('Failed to save resource:', err);
+    } finally {
+      setSavingResource(false);
+    }
+  };
+
+  const handleDeleteResource = async (resourceId: string) => {
+    if (!persona.id) return;
+    try {
+      await deleteExpertResource(resourceId, persona.id);
+      setResources(prev => prev.filter(r => r.id !== resourceId));
+    } catch (err) {
+      console.error('Failed to delete resource:', err);
+    }
+  };
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: '👤' },
@@ -237,7 +379,73 @@ const ExpertCard: React.FC<ExpertCardProps> = ({ persona, onRestart, onOpenTrain
               </div>
             </section>
 
+            {/* Resources Section */}
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-white uppercase tracking-widest text-xs flex items-center gap-2">
+                  <span>📚</span> Resources
+                </h3>
+                <button
+                  onClick={() => setShowResourcesModal(true)}
+                  className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 uppercase tracking-wider transition-colors"
+                >
+                  + Add
+                </button>
+              </div>
+              
+              {resources.length === 0 ? (
+                <p className="text-slate-600 text-xs">No resources added yet</p>
+              ) : (
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {resources.map((resource) => (
+                    <div 
+                      key={resource.id} 
+                      className="group flex items-start gap-2 p-2 rounded-lg bg-slate-800/50 border border-slate-700/50 hover:border-cyan-500/50 cursor-pointer transition-all"
+                      onClick={() => setExpandedResource(resource)}
+                    >
+                      <span className="text-cyan-500 text-xs mt-0.5">
+                        {resource.resourceType === 'url' ? '🔗' : 
+                         resource.resourceType === 'book' ? '📖' : 
+                         resource.resourceType === 'api' ? '⚡' : 
+                         resource.resourceType === 'tool' ? '🛠️' : '📄'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-slate-300 text-xs font-medium truncate">{resource.title}</p>
+                        {resource.description && (
+                          <p className="text-slate-500 text-[10px] truncate">{resource.description}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {resource.content && (
+                          <span className="text-emerald-500 text-[10px]">✓</span>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}
+                          className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 text-xs transition-all"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <button
+                onClick={() => setShowResourcesModal(true)}
+                className="w-full py-2 border border-dashed border-slate-700 rounded-lg text-slate-500 text-[10px] font-mono uppercase tracking-wider hover:border-cyan-500/50 hover:text-cyan-400 transition-all"
+              >
+                + Add Resource
+              </button>
+            </section>
+
             <div className="space-y-4">
+              <button 
+                onClick={handleAskForResources}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20 transform hover:scale-[1.02] transition-all text-sm"
+              >
+                <span>📋</span> What Resources Do You Need?
+              </button>
               <button 
                 onClick={onOpenTraining}
                 className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-cyan-900/20 transform hover:scale-[1.02] transition-all"
@@ -254,6 +462,324 @@ const ExpertCard: React.FC<ExpertCardProps> = ({ persona, onRestart, onOpenTrain
           </div>
         </div>
       </div>
+
+      {/* Add Resource Modal */}
+      {showResourcesModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md max-h-[85vh] overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-slate-800">
+              <h3 className="text-xl font-bold text-white">Add Resource</h3>
+              <p className="text-slate-500 text-sm mt-1">
+                Add a resource for {persona.name} to reference
+              </p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">
+                  Resource Type
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {(['url', 'book', 'document', 'api', 'tool'] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setNewResource(prev => ({ ...prev, resourceType: type }))}
+                      className={`px-3 py-1 rounded-lg text-xs font-mono capitalize ${
+                        newResource.resourceType === type 
+                          ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' 
+                          : 'bg-slate-800 text-slate-500 border border-slate-700'
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  value={newResource.title}
+                  onChange={(e) => setNewResource(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="e.g., Good to Great, OpenAI API..."
+                  className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
+                />
+              </div>
+
+              {(newResource.resourceType === 'url' || newResource.resourceType === 'api') && (
+                <div>
+                  <label className="block text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">
+                    URL
+                  </label>
+                  <input
+                    type="url"
+                    value={newResource.url}
+                    onChange={(e) => setNewResource(prev => ({ ...prev, url: e.target.value }))}
+                    placeholder="https://..."
+                    className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">
+                  Description (optional)
+                </label>
+                <textarea
+                  value={newResource.description}
+                  onChange={(e) => setNewResource(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Why this resource is important..."
+                  rows={3}
+                  className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 resize-none"
+                />
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-slate-800 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowResourcesModal(false);
+                  setNewResource({ title: '', description: '', resourceType: 'url', url: '', content: '' });
+                }}
+                className="flex-1 py-3 border border-slate-700 text-slate-400 rounded-xl text-sm font-medium hover:bg-slate-800 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddResource}
+                disabled={!newResource.title.trim() || savingResource}
+                className="flex-1 py-3 bg-gradient-to-r from-cyan-600 to-purple-600 text-white rounded-xl text-sm font-bold hover:from-cyan-500 hover:to-purple-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingResource ? 'Saving...' : 'Add Resource'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resource Recommendations Modal */}
+      {showRecommendations && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white">Resources I Need</h3>
+                <p className="text-slate-500 text-sm mt-1">
+                  {persona.name}'s recommended resources and tools
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRecommendations(false)}
+                className="text-slate-500 hover:text-white text-xl transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              {loadingRecommendations ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-12 h-12 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mb-4"></div>
+                  <p className="text-slate-400 font-mono text-sm">{persona.name} is thinking...</p>
+                </div>
+              ) : autoPopulating ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-12 h-12 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mb-4"></div>
+                  <p className="text-white font-medium mb-2">Auto-populating resources...</p>
+                  <p className="text-slate-400 font-mono text-sm">
+                    {populateProgress.current}/{populateProgress.total}: {populateProgress.item}
+                  </p>
+                </div>
+              ) : recommendations ? (
+                <div className="space-y-6">
+                  {/* Introduction */}
+                  <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                    <p className="text-slate-300 leading-relaxed">{recommendations.introduction}</p>
+                  </div>
+                  
+                  {/* Resources by category */}
+                  {['capability', 'book', 'website', 'document', 'data'].map(category => {
+                    const categoryResources = recommendations.resources.filter(r => r.category === category);
+                    if (categoryResources.length === 0) return null;
+                    
+                    const categoryLabels: Record<string, string> = {
+                      capability: 'Capabilities & Tools',
+                      book: 'Books & Reading',
+                      website: 'Websites & Resources',
+                      document: 'Documents Needed',
+                      data: 'Data Sources'
+                    };
+                    
+                    return (
+                      <div key={category}>
+                        <h4 className="text-cyan-400 font-bold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
+                          <span>{getCategoryIcon(category)}</span>
+                          {categoryLabels[category]}
+                        </h4>
+                        <div className="space-y-2">
+                          {categoryResources.map((resource, idx) => (
+                            <div 
+                              key={idx}
+                              className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50 hover:border-slate-600 transition-colors"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-white font-medium">{resource.title}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full border ${getPriorityColor(resource.priority)}`}>
+                                      {resource.priority}
+                                    </span>
+                                  </div>
+                                  <p className="text-slate-400 text-sm leading-relaxed">{resource.description}</p>
+                                </div>
+                                {category === 'capability' && (
+                                  <button className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded-lg transition-colors">
+                                    Enable
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            
+            <div className="p-4 border-t border-slate-800 flex gap-3">
+              <button
+                onClick={() => setShowRecommendations(false)}
+                className="flex-1 py-3 border border-slate-700 text-slate-400 rounded-xl text-sm font-medium hover:bg-slate-800 transition-all"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleAutoPopulate}
+                disabled={autoPopulating || !recommendations || recommendations.resources.length === 0}
+                className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white rounded-xl text-sm font-bold hover:from-emerald-500 hover:to-cyan-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <span>🔄</span> Auto-Populate All
+              </button>
+              <button
+                onClick={() => {
+                  setShowRecommendations(false);
+                  setShowResourcesModal(true);
+                }}
+                className="flex-1 py-3 bg-gradient-to-r from-cyan-600 to-purple-600 text-white rounded-xl text-sm font-bold hover:from-cyan-500 hover:to-purple-500 transition-all"
+              >
+                + Add Manually
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expanded Resource View Modal */}
+      {expandedResource && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">
+                  {expandedResource.resourceType === 'url' ? '🔗' : 
+                   expandedResource.resourceType === 'book' ? '📖' : 
+                   expandedResource.resourceType === 'api' ? '⚡' : 
+                   expandedResource.resourceType === 'tool' ? '🛠️' : '📄'}
+                </span>
+                <div>
+                  <h3 className="text-xl font-bold text-white">{expandedResource.title}</h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full uppercase">
+                      {expandedResource.resourceType}
+                    </span>
+                    {expandedResource.isAttached && (
+                      <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full">
+                        ✓ Attached
+                      </span>
+                    )}
+                    {expandedResource.isRecommended && (
+                      <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded-full">
+                        AI Recommended
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setExpandedResource(null)}
+                className="text-slate-500 hover:text-white text-xl transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              {expandedResource.description && (
+                <div className="mb-4">
+                  <h4 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Description</h4>
+                  <p className="text-slate-300">{expandedResource.description}</p>
+                </div>
+              )}
+              
+              {expandedResource.url && (
+                <div className="mb-4">
+                  <h4 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">URL</h4>
+                  <a 
+                    href={expandedResource.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-cyan-400 hover:underline break-all"
+                  >
+                    {expandedResource.url}
+                  </a>
+                </div>
+              )}
+              
+              {expandedResource.content ? (
+                <div>
+                  <h4 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Content</h4>
+                  <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 prose prose-invert prose-sm max-w-none">
+                    <div className="text-slate-300 leading-relaxed whitespace-pre-wrap">
+                      {expandedResource.content}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-3">📭</div>
+                  <p className="text-slate-400">No content attached yet</p>
+                  <p className="text-slate-500 text-sm mt-1">
+                    This resource needs to be manually configured or uploaded
+                  </p>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-slate-800 flex gap-3">
+              <button
+                onClick={() => setExpandedResource(null)}
+                className="flex-1 py-3 border border-slate-700 text-slate-400 rounded-xl text-sm font-medium hover:bg-slate-800 transition-all"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  handleDeleteResource(expandedResource.id);
+                  setExpandedResource(null);
+                }}
+                className="py-3 px-6 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-all"
+              >
+                Delete Resource
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

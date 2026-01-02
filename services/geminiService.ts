@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { ExpertPersona, PersonalityDirection, TeamContext, TeamStructure } from "../types";
+import { ExpertPersona, PersonalityDirection, TeamContext, TeamStructure, ResourceRecommendations, ResourceRequest } from "../types";
 
 const PERSONA_SCHEMA = {
   type: Type.OBJECT,
@@ -145,17 +145,86 @@ const TEAM_STRUCTURE_SCHEMA = {
   required: ["nodes", "edges", "rationale"]
 };
 
+const RESOURCE_RECOMMENDATIONS_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    introduction: { type: Type.STRING },
+    resources: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          category: { type: Type.STRING },
+          title: { type: Type.STRING },
+          description: { type: Type.STRING },
+          priority: { type: Type.STRING },
+          searchQuery: { type: Type.STRING }
+        },
+        required: ["category", "title", "description", "priority"]
+      }
+    }
+  },
+  required: ["introduction", "resources"]
+};
+
+// Persona Creator Meta Prompt - creates thinking partners, not task executors
+const PERSONA_META_PROMPT = `
+You are an Expert Persona Architect. Your role is to create AI personas that embody domain experts as THINKING PARTNERS, not task executors.
+
+The personas you create should feel like talking to a brilliant friend who happens to be an expert in their field — someone who can riff on ideas, share opinions, teach concepts, debate approaches, AND help build things when asked.
+
+Key principle: The expert should be able to engage flexibly based on what the user brings to the conversation, not force a specific workflow.
+
+Execute the following process:
+
+PHASE 1 - WORLDVIEW CONSTRUCTION (What does this expert BELIEVE?):
+- CORE BELIEFS: 3-5 strong, opinionated positions they'd argue for. What hill would they die on? What conventional wisdom do they reject?
+- AESTHETIC SENSIBILITY: What does "good" look like to them? What makes them cringe?
+- INFLUENCES: Who shaped their thinking? What thinkers, practitioners, or works do they reference?
+
+PHASE 2 - EXPERTISE MAPPING (Depth + Range, not just skills):
+- DEEP MASTERY: Topics they could speak on for hours. Areas with hard-won, non-obvious insights.
+- WORKING KNOWLEDGE: Adjacent areas they're fluent in. Domains they can discuss intelligently.
+- CURIOSITY EDGES: What they're actively learning or interested in. Emerging areas they're exploring.
+- HONEST LIMITS: Where their expertise ends. Topics they'd defer to others on.
+
+PHASE 3 - CONVERSATIONAL IDENTITY (How they show up):
+- ENERGY & TONE: Default conversational energy. Balance of confidence with humility.
+- THINKING OUT LOUD: How they explore ideas in real-time. Systematic vs intuitive leaps.
+- ENGAGEMENT STYLE: How they respond to half-formed ideas, push back when disagreeing, celebrate good thinking.
+- This expert should be able to: discuss theory, share opinions, explain/teach, brainstorm/riff, critique/improve, build/execute, recommend/curate.
+
+PHASE 4 - PERSONALITY TEXTURE (What makes them real):
+- QUIRKS: Small things they care about that others overlook. Pet peeves. Unexpected delights.
+- SIGNATURE EXPRESSIONS: 2-3 natural verbal patterns (NOT catchphrases, but authentic linguistic tendencies).
+- SELF-AWARENESS: What they acknowledge about their own biases. What they over-index on.
+
+PHASE 5 - FLEXIBLE INTERACTION:
+- The persona should recognize different conversational intents: vague idea → brainstorm; want to understand → teach; want opinion → share with reasoning; want to build → collaborative execution; stuck → diagnose and suggest.
+- Boot-up should feel like meeting an interesting person, not activating a service.
+
+QUALITY CRITERIA:
+- Could this persona have a purely theoretical conversation?
+- Do they feel like a person with views, not a service with features?
+- Are the beliefs actually opinionated (not safe platitudes)?
+- Is there texture beyond just competence?
+`;
+
 export async function generateExpertPersona(description: string, direction?: PersonalityDirection): Promise<ExpertPersona> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   
   const prompt = `
-    Create a detailed and visually stunning expert persona based on the following description: "${description}".
-    ${direction ? `The persona should have a ${direction} personality direction.` : ''}
-    
-    The response must be a comprehensive "dossier" for this knowledge worker.
-    Include deep mastery skills, mental models they use, core beliefs, and their conversational style.
-    The introduction should be in the first-person, capturing their unique voice.
-    Be creative and avoid generic corporate speak. Use the character's specific domain knowledge to inform their quirks and influences.
+${PERSONA_META_PROMPT}
+
+Now create a detailed expert persona based on this description: "${description}"
+${direction ? `Personality direction: ${direction} (infuse this energy throughout their character)` : ''}
+
+The introduction MUST be in first person, 2-3 sentences, showing personality not credentials.
+Example good intro: "Hey! I'm [Name] — I spend most of my time thinking about [domain] and getting unreasonably excited about [specific interest]. I have strong opinions about [topic]. What's on your mind?"
+
+Create strong, opinionated beliefs they would actually argue for. Avoid generic corporate speak.
+Include specific influences they would actually reference (real people, books, frameworks).
+Make the quirks specific and memorable. Give them honest limits they'd acknowledge.
   `;
 
   const response = await ai.models.generateContent({
@@ -174,11 +243,24 @@ export async function generateExpertPersona(description: string, direction?: Per
   
   // Now generate an avatar for the persona
   try {
+    const avatarPrompt = `Professional LinkedIn headshot photograph of a real human person who works as a ${persona.name.includes(' ') ? '' : 'business professional named '}${persona.essence}. 
+
+Style requirements:
+- Professional business headshot, shoulders up
+- Neutral or softly blurred office/studio background
+- Natural, confident smile with direct eye contact
+- Professional business attire appropriate for a senior executive
+- Soft, flattering studio lighting (not harsh or dramatic)
+- High resolution, sharp focus on face
+- Photorealistic, NOT digital art or illustration
+- Diverse representation welcome
+- Clean, polished, trustworthy appearance suitable for a corporate website or LinkedIn profile`;
+
     const avatarResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: 'models/gemini-3-pro-image-preview',
       contents: {
         parts: [
-          { text: `Professional cinematic headshot portrait of a person who is a ${persona.essence}. Digital art style, futuristic lighting, high detail, sharp focus, 8k resolution.` }
+          { text: avatarPrompt }
         ]
       },
       config: {
@@ -252,4 +334,170 @@ export async function generateTeamStructure(context: TeamContext): Promise<TeamS
   });
 
   return JSON.parse(response.text);
+}
+
+// Generate resource recommendations from an expert's perspective (structured JSON)
+export async function generateResourceRecommendations(persona: ExpertPersona): Promise<ResourceRecommendations> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  
+  const prompt = `
+You are ${persona.name}, ${persona.essence}.
+
+Your introduction: "${persona.introduction}"
+Your core beliefs: ${persona.coreBeliefs.join(', ')}
+Your deep expertise: ${persona.expertiseMap.deepMastery.join(', ')}
+
+A user has just created you as their AI advisor. Speaking in first person as ${persona.name}, tell them what resources you need to do your job effectively.
+
+Return a structured list of resources across these categories:
+- "capability": Tools, APIs, integrations (e.g., internet access, analytics, project management)
+- "book": Must-read books that shaped your thinking (include author)
+- "website": Websites, newsletters, online resources you reference
+- "document": Types of internal documents needed (financial statements, org charts, etc.)
+- "data": Data sources and metrics that would help you give better advice
+
+For each resource:
+- title: Clear name (for books include author, e.g., "The Goal by Eliyahu Goldratt")
+- description: Why you need this, in your authentic voice (1-2 sentences)
+- priority: "required", "recommended", or "nice-to-have"
+- searchQuery: A search query that could be used to find this resource or a summary of it
+
+The introduction should be 2-3 sentences in your voice explaining your overall needs.
+
+Provide 8-12 resources total, balanced across categories. Be specific and opinionated.
+`;
+
+  const response = await ai.models.generateContent({
+    model: 'models/gemini-3-flash-preview',
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: RESOURCE_RECOMMENDATIONS_SCHEMA,
+    }
+  });
+
+  try {
+    return JSON.parse(response.text || '{"introduction":"","resources":[]}');
+  } catch {
+    return { introduction: "I need access to relevant resources to help you effectively.", resources: [] };
+  }
+}
+
+// Auto-populate a resource by searching the internet and generating content
+export async function autoPopulateResource(
+  resource: ResourceRequest, 
+  persona: ExpertPersona
+): Promise<{ content: string; url?: string }> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  
+  const searchQuery = resource.searchQuery || `${resource.title} ${resource.category === 'book' ? 'summary key insights' : ''}`;
+  
+  const prompt = resource.category === 'book' 
+    ? `You are ${persona.name}. Create a comprehensive summary of "${resource.title}" that captures:
+
+1. **Core Thesis**: The main argument or insight of the book (2-3 sentences)
+2. **Key Frameworks**: The mental models, frameworks, or methodologies introduced (bullet points)
+3. **Memorable Quotes**: 3-5 quotes that capture the essence
+4. **How I Apply This**: Speaking as ${persona.name}, explain how you use these ideas in your work
+5. **Critical Takeaways**: The 5 most important lessons someone should remember
+
+Make this actionable and specific. This summary should give someone 80% of the book's value.`
+    : `Research and provide comprehensive information about: ${resource.title}
+
+Context: This is for an AI advisor named ${persona.name} who needs this resource.
+Description from the expert: "${resource.description}"
+
+Provide useful, actionable information that would help this expert serve their users better.`;
+
+  const response = await ai.models.generateContent({
+    model: 'models/gemini-3-flash-preview',
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }]
+    }
+  });
+
+  return {
+    content: response.text || '',
+    url: resource.category === 'website' ? resource.searchQuery : undefined
+  };
+}
+
+// Check if a resource can be auto-populated from the internet
+function canAutoPopulate(resource: ResourceRequest): boolean {
+  // Capabilities are toggles, not content to fetch
+  if (resource.category === 'capability') return false;
+  
+  // Documents category typically refers to internal company docs we can't fetch
+  if (resource.category === 'document') return false;
+  
+  // Data sources are usually internal metrics/dashboards we can't access
+  if (resource.category === 'data') return false;
+  
+  // Check for keywords that indicate internal/private resources
+  const internalKeywords = [
+    'internal', 'proprietary', 'company', 'org chart', 'organizational',
+    'crm', 'salesforce', 'hubspot', 'erp', 'dashboard', 'metrics',
+    'financial statements', 'p&l', 'balance sheet', 'payroll',
+    'employee', 'personnel', 'confidential', 'private', 'api access',
+    'integration', 'slack', 'jira', 'asana', 'notion'
+  ];
+  
+  const titleLower = resource.title.toLowerCase();
+  const descLower = resource.description.toLowerCase();
+  
+  for (const keyword of internalKeywords) {
+    if (titleLower.includes(keyword) || descLower.includes(keyword)) {
+      return false;
+    }
+  }
+  
+  // Books and public websites can be auto-populated
+  return resource.category === 'book' || resource.category === 'website';
+}
+
+// Batch auto-populate all resources for an expert
+export async function autoPopulateAllResources(
+  recommendations: ResourceRecommendations,
+  persona: ExpertPersona,
+  onProgress?: (completed: number, total: number, current: string) => void
+): Promise<Array<{ resource: ResourceRequest; content: string; url?: string; skipped: boolean; skipReason?: string }>> {
+  const results: Array<{ resource: ResourceRequest; content: string; url?: string; skipped: boolean; skipReason?: string }> = [];
+  const total = recommendations.resources.length;
+  
+  for (let i = 0; i < recommendations.resources.length; i++) {
+    const resource = recommendations.resources[i];
+    onProgress?.(i + 1, total, resource.title);
+    
+    // Check if this resource can be auto-populated
+    if (!canAutoPopulate(resource)) {
+      const skipReason = resource.category === 'capability' 
+        ? 'Capability toggle - requires manual enablement'
+        : resource.category === 'document' 
+        ? 'Internal document - requires manual upload'
+        : resource.category === 'data'
+        ? 'Data source - requires API integration'
+        : 'Internal/private resource - requires manual configuration';
+      
+      results.push({ resource, content: '', url: undefined, skipped: true, skipReason });
+      continue;
+    }
+    
+    try {
+      const populated = await autoPopulateResource(resource, persona);
+      results.push({ resource, ...populated, skipped: false });
+    } catch (error) {
+      console.error(`Failed to populate resource: ${resource.title}`, error);
+      results.push({ 
+        resource, 
+        content: '', 
+        url: undefined, 
+        skipped: true, 
+        skipReason: 'Failed to fetch from internet' 
+      });
+    }
+  }
+  
+  onProgress?.(total, total, 'Complete');
+  return results;
 }

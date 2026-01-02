@@ -1,7 +1,8 @@
 
-import React, { useMemo } from 'react';
-import ReactFlow, { Background, Controls, Edge, Node, Handle, Position } from 'reactflow';
+import React, { useMemo, useEffect, useState } from 'react';
+import ReactFlow, { Background, Controls, Edge, Node, Handle, Position, useNodesState, useEdgesState } from 'reactflow';
 import { TeamStructure, TeamContext } from '../types';
+import { getLayoutedElements, inferNodeLevel } from '../lib/layoutOrgChart';
 
 interface TeamStructurePreviewProps {
   structure: TeamStructure;
@@ -59,51 +60,45 @@ const TeamStructurePreview: React.FC<TeamStructurePreviewProps> = ({
   onBack
 }) => {
   const nodeTypes = useMemo(() => ({ default: CustomStackedOrgNode }), []);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // Strict positions as requested by level
-  const fixedNodes: Node[] = [
-    // Level 1
-    { id: 'ceo', role: 'Chief Executive Officer (CEO)', level: 1, pos: { x: 400, y: 0 } },
-    // Level 2
-    { id: 'vp-sales', role: 'VP, Sales', level: 2, pos: { x: 200, y: 150 } },
-    { id: 'vp-operations', role: 'VP, Finance & Operations', level: 2, pos: { x: 400, y: 150 } },
-    { id: 'vp-consulting', role: 'VP, Consulting', level: 2, pos: { x: 600, y: 150 } },
-    // Level 3
-    { id: 'sales-manager', role: 'Director of Marketing', level: 3, pos: { x: 100, y: 300 } },
-    { id: 'account-exec', role: 'Account Executive', level: 3, pos: { x: 250, y: 300 } },
-    { id: 'controller', role: 'Controller', level: 3, pos: { x: 400, y: 300 } },
-    { id: 'senior-consultant', role: 'Senior Procurement Consultant', level: 3, pos: { x: 550, y: 300 } },
-    { id: 'project-manager', role: 'Project Manager', level: 3, pos: { x: 700, y: 300 } },
-    // Level 4
-    { id: 'sales-rep', role: 'Marketing Specialist', level: 4, pos: { x: 100, y: 450 } },
-    { id: 'staff-accountant', role: 'Staff Accountant', level: 4, pos: { x: 400, y: 450 } },
-    { id: 'analyst', role: 'Procurement Analyst', level: 4, pos: { x: 550, y: 450 } },
-  ].map(n => ({
-    id: n.id,
-    type: 'default',
-    data: { role: n.role, level: n.level },
-    position: n.pos,
-    draggable: true,
-  }));
+  // Transform AI-generated structure to React Flow format and apply Dagre layout
+  useEffect(() => {
+    if (!structure || !structure.nodes || !structure.edges) return;
 
-  const fixedEdges: Edge[] = [
-    { id: 'e1', source: 'ceo', target: 'vp-sales' },
-    { id: 'e2', source: 'ceo', target: 'vp-operations' },
-    { id: 'e3', source: 'ceo', target: 'vp-consulting' },
-    { id: 'e4', source: 'vp-sales', target: 'sales-manager' },
-    { id: 'e5', source: 'vp-sales', target: 'account-exec' },
-    { id: 'e6', source: 'vp-operations', target: 'controller' },
-    { id: 'e7', source: 'vp-consulting', target: 'senior-consultant' },
-    { id: 'e8', source: 'vp-consulting', target: 'project-manager' },
-    { id: 'e9', source: 'sales-manager', target: 'sales-rep' },
-    { id: 'e10', source: 'controller', target: 'staff-accountant' },
-    { id: 'e11', source: 'senior-consultant', target: 'analyst' },
-  ].map(e => ({
-    ...e,
-    type: 'smoothstep',
-    animated: true,
-    style: { stroke: '#475569', strokeWidth: 2 }
-  }));
+    // Convert structure edges to React Flow format first (needed for level inference)
+    const rfEdges: Edge[] = structure.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      type: 'smoothstep',
+      animated: true,
+      style: { stroke: '#475569', strokeWidth: 2 },
+    }));
+
+    // Convert structure nodes to React Flow format
+    const rfNodes: Node[] = structure.nodes.map((node) => {
+      const level = inferNodeLevel(node.id, rfEdges);
+      return {
+        id: node.id,
+        type: 'default',
+        data: { role: node.role, level: Math.min(level, 4) },
+        position: node.position || { x: 0, y: 0 },
+        draggable: true,
+      };
+    });
+
+    // Apply Dagre layout for proper hierarchical positioning
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+      rfNodes,
+      rfEdges,
+      { direction: 'TB', nodeSep: 80, rankSep: 120 }
+    );
+
+    setNodes(layoutedNodes);
+    setEdges(layoutedEdges);
+  }, [structure, setNodes, setEdges]);
 
   return (
     <div className="w-full flex flex-col h-[calc(100vh-6rem)] bg-[#020617] relative animate-in fade-in duration-700 overflow-hidden">
@@ -167,8 +162,10 @@ const TeamStructurePreview: React.FC<TeamStructurePreviewProps> = ({
         {/* CENTER: Flow Canvas */}
         <main className="flex-1 relative">
           <ReactFlow
-            nodes={fixedNodes}
-            edges={fixedEdges}
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             fitView
             fitViewOptions={{ padding: 0.2 }}

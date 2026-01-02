@@ -17,11 +17,12 @@ interface Message {
 
 interface TeamChatProps {
   experts: ExpertPersona[];
+  activeAdvisor?: ExpertPersona | null;
   onClose: () => void;
   onBrowseLegends: () => void;
 }
 
-const TeamChat: React.FC<TeamChatProps> = ({ experts, onClose, onBrowseLegends }) => {
+const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, onBrowseLegends }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState<string[]>([]); // Array of advisor names currently typing
@@ -53,9 +54,9 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, onClose, onBrowseLegends }
       userText.toLowerCase().includes(`@${exp.name.toLowerCase().replace(/\s/g, '')}`)
     );
 
-    // If no specific mention, maybe the last active advisor or a default responder?
-    // For this prototype, if no one is mentioned, the first advisor in the list responds.
-    const targets = mentionedAdvisors.length > 0 ? mentionedAdvisors : (experts.length > 0 ? [experts[0]] : []);
+    // If no specific mention, use the active advisor (if set) or first expert
+    const defaultAdvisor = activeAdvisor || (experts.length > 0 ? experts[0] : null);
+    const targets = mentionedAdvisors.length > 0 ? mentionedAdvisors : (defaultAdvisor ? [defaultAdvisor] : []);
 
     if (targets.length === 0) return;
 

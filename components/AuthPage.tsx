@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { signIn, signUp, signInWithGoogle } from '../lib/supabase';
 
 interface AuthPageProps {
   onAuthSuccess: () => void;
@@ -8,11 +9,49 @@ interface AuthPageProps {
 
 const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess, onGoLanding }) => {
   const [view, setView] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate successful authentication
-    onAuthSuccess();
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (view === 'signup') {
+        const { data, error } = await signUp(email, password, fullName);
+        if (error) throw error;
+        if (data.user) {
+          onAuthSuccess();
+        }
+      } else {
+        const { data, error } = await signIn(email, password);
+        if (error) throw error;
+        if (data.user) {
+          onAuthSuccess();
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { error } = await signInWithGoogle();
+      if (error) throw error;
+      // OAuth will redirect, so we don't need to call onAuthSuccess here
+    } catch (err: any) {
+      setError(err.message || 'Google sign-in failed');
+      setLoading(false);
+    }
   };
 
   return (
@@ -54,6 +93,12 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess, onGoLanding }) => {
 
           <div className="p-8 md:p-10">
             <form onSubmit={handleSubmit} className="space-y-6">
+              {error && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs font-mono">
+                  {error}
+                </div>
+              )}
+
               {view === 'signup' && (
                 <div className="space-y-2">
                   <label className="text-[10px] font-mono text-slate-500 uppercase tracking-widest block ml-1">Full Name</label>
@@ -61,7 +106,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess, onGoLanding }) => {
                     type="text"
                     required
                     placeholder="John Doe"
-                    className="w-full bg-[#020617] border border-slate-800 rounded-2xl py-4 px-6 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-all"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    disabled={loading}
+                    className="w-full bg-[#020617] border border-slate-800 rounded-2xl py-4 px-6 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-all disabled:opacity-50"
                   />
                 </div>
               )}
@@ -72,7 +120,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess, onGoLanding }) => {
                   type="email"
                   required
                   placeholder="name@company.com"
-                  className="w-full bg-[#020617] border border-slate-800 rounded-2xl py-4 px-6 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-all"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                  className="w-full bg-[#020617] border border-slate-800 rounded-2xl py-4 px-6 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-all disabled:opacity-50"
                 />
               </div>
 
@@ -87,15 +138,19 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess, onGoLanding }) => {
                   type="password"
                   required
                   placeholder="••••••••"
-                  className="w-full bg-[#020617] border border-slate-800 rounded-2xl py-4 px-6 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-all"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  className="w-full bg-[#020617] border border-slate-800 rounded-2xl py-4 px-6 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-all disabled:opacity-50"
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-cyan-900/20 transform hover:scale-[1.02] active:scale-[0.98] transition-all"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-cyan-900/20 transform hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {view === 'signin' ? 'Sign In' : 'Create Account'}
+                {loading ? 'Processing...' : view === 'signin' ? 'Sign In' : 'Create Account'}
               </button>
 
               <div className="relative py-4 flex items-center gap-4">
@@ -106,8 +161,9 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess, onGoLanding }) => {
 
               <button
                 type="button"
-                onClick={onAuthSuccess}
-                className="w-full bg-slate-900 border border-slate-800 text-slate-300 font-bold py-4 rounded-2xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
+                onClick={handleGoogleSignIn}
+                disabled={loading}
+                className="w-full bg-slate-900 border border-slate-800 text-slate-300 font-bold py-4 rounded-2xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />

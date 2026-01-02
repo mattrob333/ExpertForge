@@ -7,12 +7,16 @@ import TrainingDashboard from './components/TrainingDashboard';
 import HomeDashboard from './components/HomeDashboard';
 import LandingPage from './components/LandingPage';
 import AuthPage from './components/AuthPage';
-import CommandCenter from './components/CommandCenter';
 import TeamChat from './components/TeamChat';
 import TeamSetup from './components/TeamSetup';
-import TeamStructurePreview from './components/TeamStructurePreview';
-import { ExpertPersona, AppState, PersonalityDirection, TeamContext, TeamStructure } from './types';
+import TeamBuilder from './components/TeamBuilder';
+import LegendsLibrary from './components/LegendsLibrary';
+import LegendProfile from './components/LegendProfile';
+import { ExpertPersona, AppState, PersonalityDirection, TeamContext, TeamStructure, Legend } from './types';
 import { generateExpertPersona, generateTeamStructure } from './services/geminiService';
+import { supabase, signOut, onAuthStateChange } from './lib/supabase';
+import { getExperts, saveExpert, getTeamContext, saveTeamContext, getTeamStructure, saveTeamStructure, clearLocalStorage, getAllTeams, TeamContextWithId } from './services/storageService';
+import type { User } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>('landing');
@@ -21,36 +25,69 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [teamContext, setTeamContext] = useState<TeamContext | null>(null);
   const [teamStructure, setTeamStructure] = useState<TeamStructure | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
+  const [allTeams, setAllTeams] = useState<TeamContextWithId[]>([]);
+  const [selectedLegend, setSelectedLegend] = useState<Legend | null>(null);
+  const [activeChatAdvisor, setActiveChatAdvisor] = useState<ExpertPersona | null>(null);
 
-  // Persistence
+  // Auth state listener
   useEffect(() => {
-    const savedExperts = localStorage.getItem('expertforge_experts');
-    const savedContext = localStorage.getItem('expertforge_team_context');
-    const savedStructure = localStorage.getItem('expertforge_team_structure');
-    if (savedExperts) {
-      try { setExperts(JSON.parse(savedExperts)); } catch (e) { console.error("Failed to load experts", e); }
-    }
-    if (savedContext) {
-      try { setTeamContext(JSON.parse(savedContext)); } catch (e) { console.error("Failed to load context", e); }
-    }
-    if (savedStructure) {
-      try { setTeamStructure(JSON.parse(savedStructure)); } catch (e) { console.error("Failed to load structure", e); }
-    }
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+      if (session?.user) {
+        setState('home');
+        loadUserData(session.user.id);
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+      if (event === 'SIGNED_IN' && session?.user) {
+        loadUserData(session.user.id);
+      } else if (event === 'SIGNED_OUT') {
+        setExperts([]);
+        setTeamContext(null);
+        setTeamStructure(null);
+        setCurrentTeamId(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (experts.length > 0) localStorage.setItem('expertforge_experts', JSON.stringify(experts));
-    if (teamContext) localStorage.setItem('expertforge_team_context', JSON.stringify(teamContext));
-    if (teamStructure) localStorage.setItem('expertforge_team_structure', JSON.stringify(teamStructure));
-  }, [experts, teamContext, teamStructure]);
+  // Load user data from storage
+  const loadUserData = async (userId: string) => {
+    try {
+      const [loadedExperts, loadedTeams] = await Promise.all([
+        getExperts(userId),
+        getAllTeams(userId),
+      ]);
+      setExperts(loadedExperts);
+      setAllTeams(loadedTeams);
+      
+      // Set the first team as current context if available
+      if (loadedTeams.length > 0) {
+        setTeamContext(loadedTeams[0]);
+      }
+    } catch (err) {
+      console.error('Failed to load user data:', err);
+    }
+  };
 
   const handleGenerate = async (description: string, direction?: PersonalityDirection) => {
     setState('loading');
     setError(null);
     try {
       const result = await generateExpertPersona(description, direction);
-      setExperts(prev => [...prev, result]);
-      setCurrentPersona(result);
+      // Save to storage
+      const savedExpert = await saveExpert(result, user?.id);
+      setExperts(prev => [...prev, savedExpert]);
+      setCurrentPersona(savedExpert);
       setState('display');
     } catch (err) {
       console.error(err);
@@ -64,8 +101,21 @@ const App: React.FC = () => {
     setState('loading');
     setError(null);
     try {
+      // Save team context first
+      const teamId = await saveTeamContext(context, user?.id);
+      setCurrentTeamId(teamId);
+      
+      // Add to allTeams list
+      const newTeamWithId: TeamContextWithId = { ...context, id: teamId };
+      setAllTeams(prev => [newTeamWithId, ...prev]);
+      
+      // Generate structure
       const structure = await generateTeamStructure(context);
       setTeamStructure(structure);
+      
+      // Save structure immediately so it loads instantly next time
+      await saveTeamStructure(structure, teamId);
+      
       setState('structure-preview');
     } catch (err) {
       console.error(err);
@@ -89,7 +139,7 @@ const App: React.FC = () => {
   const goDashboard = () => {
     setCurrentPersona(null);
     setError(null);
-    setState('dashboard');
+    setState('home');
   };
 
   const goChat = () => {
@@ -98,16 +148,101 @@ const App: React.FC = () => {
     setState('chat');
   };
 
-  const goTeams = () => {
-    setCurrentPersona(null);
-    setError(null);
-    setState('teams');
-  };
+  // goTeams removed - teams now shown in HomeDashboard
 
   const goTeamSetup = () => {
     setCurrentPersona(null);
     setError(null);
     setState('team-setup');
+  }
+
+  const goLegends = () => {
+    setCurrentPersona(null);
+    setError(null);
+    setState('legends');
+  }
+
+  const handleSelectLegend = (legend: Legend) => {
+    setSelectedLegend(legend);
+    setState('legend-profile');
+  }
+
+  const handleDraftLegend = (legend: Legend): ExpertPersona => {
+    // Convert legend to ExpertPersona format and add to experts
+    const expertFromLegend: ExpertPersona = {
+      id: `legend-${legend.id}`,
+      name: legend.name,
+      essence: legend.title,
+      avatarUrl: legend.photo,
+      introduction: legend.quote,
+      role: legend.categories[0],
+      isLegend: true,
+      stats: {
+        coreSkills: 95,
+        mentalModels: legend.mentalModels.length * 20,
+        coreBeliefs: legend.overview.corePhilosophy.length * 15,
+        influences: legend.overview.influences.length * 10,
+      },
+      coreBeliefs: legend.overview.corePhilosophy,
+      aesthetics: {
+        beautiful: legend.overview.knownFor.slice(0, 2).join(', '),
+        cringe: 'Mediocrity, short-term thinking',
+      },
+      expertiseMap: {
+        deepMastery: legend.overview.knownFor,
+        workingKnowledge: legend.categories,
+        curiosityEdges: [],
+        honestLimits: [],
+      },
+      thinking: {
+        problemApproach: legend.mentalModels[0]?.description || '',
+        mentalModels: legend.mentalModels.map(m => ({ name: m.name, description: m.description })),
+        reasoningPatterns: legend.famousDecisions[0]?.logic || '',
+      },
+      personality: {
+        energyProfile: 'High-intensity, strategic',
+        interactionModes: {
+          exploring: 'Asks probing questions',
+          teaching: 'Uses real-world examples',
+          building: 'Focuses on fundamentals',
+          disagreeing: 'Direct but respectful',
+        },
+        signatureExpressions: legend.mockResponses.slice(0, 3),
+        quirks: [],
+        selfAwareness: 'Highly self-aware',
+      },
+      sidebar: {
+        competencies: [
+          { label: legend.categories[0], level: 95 },
+          { label: 'Leadership', level: 90 },
+          { label: 'Strategy', level: 88 },
+        ],
+        influences: legend.overview.influences,
+        whatExcitesThem: legend.overview.knownFor[0] || 'Excellence',
+      },
+    };
+    
+    // Add to experts if not already there
+    if (!experts.find(e => e.id === expertFromLegend.id)) {
+      setExperts(prev => [...prev, expertFromLegend]);
+    }
+    
+    // Return the expert for immediate use
+    return expertFromLegend;
+  }
+
+  const handleDraftAndGoHome = (legend: Legend) => {
+    handleDraftLegend(legend);
+    setState('home');
+  }
+
+  const handleChatWithLegend = (legend: Legend) => {
+    // First draft the legend and get the expert persona
+    const expertFromLegend = handleDraftLegend(legend);
+    // Set this as the active chat advisor so they respond by default
+    setActiveChatAdvisor(expertFromLegend);
+    // Then go to chat
+    setState('chat');
   }
 
   const startAuthFlow = () => {
@@ -116,15 +251,18 @@ const App: React.FC = () => {
   };
 
   const handleAuthSuccess = () => {
-    if (!teamContext) {
-      setState('team-setup');
-    } else {
-      setState('dashboard');
-    }
+    // Always go to home dashboard after auth - experts first!
+    setState('home');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await signOut();
+    clearLocalStorage();
+    setExperts([]);
+    setTeamContext(null);
+    setTeamStructure(null);
+    setCurrentTeamId(null);
     setState('landing');
   };
 
@@ -148,75 +286,24 @@ const App: React.FC = () => {
           <div className="pt-24 w-full">
             <TeamSetup 
               onSubmit={handleTeamSetupSubmit} 
-              onCancel={() => setState('dashboard')} 
+              onCancel={() => setState('home')} 
             />
           </div>
         )}
 
         {state === 'structure-preview' && teamStructure && (
-          <div className="pt-24 w-full">
-            <TeamStructurePreview 
-              structure={teamStructure}
-              context={teamContext}
-              onAccept={() => setState('dashboard')}
-              onCustomize={() => setState('team-setup')}
-              onAutoBuild={() => setState('loading')} // Mocking building legends
-              onBack={() => setState('team-setup')}
-            />
-          </div>
-        )}
-
-        {state === 'teams' && (
-          <div className="w-full h-screen flex flex-col pt-16 bg-[#020617]">
-             <header className="fixed top-0 left-0 right-0 h-16 border-b border-slate-800 bg-[#0f172a]/80 backdrop-blur-md flex items-center justify-between px-6 z-30">
-              <div className="flex items-center gap-3 cursor-pointer" onClick={goDashboard}>
-                <div className="w-2 h-2 bg-cyan-500 rounded-full glow-cyan"></div>
-                <span className="font-mono text-sm font-black tracking-widest uppercase text-white">EXPERTFORGE</span>
-                <span className="text-slate-600 text-[10px] font-mono ml-2">TEAMS</span>
-              </div>
-              <button onClick={goDashboard} className="text-[10px] font-mono text-slate-500 hover:text-white transition-colors uppercase tracking-widest font-bold">Back to Command</button>
-            </header>
-            <div className="flex-1 p-8 overflow-y-auto">
-              <div className="max-w-4xl mx-auto space-y-12 py-12">
-                <div className="flex items-center justify-between">
-                  <h1 className="text-4xl font-black text-white">Your Teams</h1>
-                  <button onClick={goTeamSetup} className="px-6 py-2 bg-cyan-600 text-white rounded-full text-xs font-bold hover:bg-cyan-500 transition-all">+ Create New Team</button>
-                </div>
-                {teamContext ? (
-                  <div className="p-8 bg-slate-900/50 border border-slate-800 rounded-3xl space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-2xl font-bold text-white">{teamContext.name}</h3>
-                      <span className="px-3 py-1 bg-cyan-500/10 text-cyan-400 text-[10px] font-mono uppercase rounded-full">{teamContext.type}</span>
-                    </div>
-                    <p className="text-slate-400">{teamContext.description}</p>
-                    <div className="flex gap-2">
-                       {teamContext.needs.map(n => <span key={n} className="px-3 py-1 bg-slate-800 text-slate-500 text-[10px] rounded-full">{n}</span>)}
-                    </div>
-                    <button onClick={goDashboard} className="mt-4 text-cyan-500 font-mono text-[10px] uppercase tracking-widest hover:text-cyan-400 transition-colors">Enter Boardroom →</button>
-                  </div>
-                ) : (
-                  <div className="p-16 border border-dashed border-slate-800 rounded-3xl text-center">
-                    <p className="text-slate-500 font-mono text-sm uppercase tracking-widest">No teams defined yet.</p>
-                    <button onClick={goTeamSetup} className="mt-4 text-cyan-500 font-mono text-xs uppercase tracking-widest hover:underline">Setup your first team now</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {state === 'dashboard' && (
-          <CommandCenter 
+          <TeamBuilder 
+            structure={teamStructure}
+            context={teamContext}
+            teamId={currentTeamId || undefined}
             experts={experts}
-            onSelectExpert={selectExpert}
-            onCreateNew={() => setState('home')}
-            onLogout={handleLogout}
+            onSave={() => setState('home')}
+            onBack={() => setState('team-setup')}
             onGoHome={goDashboard}
-            onGoChat={goChat}
-            onGoTeams={goTeams}
-            onGoTeamSetup={goTeamSetup}
           />
         )}
+
+        {/* Teams are now shown in HomeDashboard */}
 
         {state === 'chat' && (
           <div className="w-full h-screen flex flex-col pt-16">
@@ -228,7 +315,12 @@ const App: React.FC = () => {
               </div>
               <button onClick={goDashboard} className="text-[10px] font-mono text-slate-500 hover:text-white transition-colors uppercase tracking-widest font-bold">Back to Command</button>
             </header>
-            <TeamChat experts={experts} onClose={goDashboard} onBrowseLegends={goDashboard} />
+            <TeamChat 
+              experts={activeChatAdvisor ? [...experts.filter(e => e.id !== activeChatAdvisor.id), activeChatAdvisor].filter((e, i, arr) => arr.findIndex(x => x.id === e.id) === i) : experts} 
+              activeAdvisor={activeChatAdvisor}
+              onClose={() => { setActiveChatAdvisor(null); goDashboard(); }} 
+              onBrowseLegends={() => { setActiveChatAdvisor(null); goLegends(); }} 
+            />
           </div>
         )}
 
@@ -236,20 +328,43 @@ const App: React.FC = () => {
           <div className="pt-24 w-full">
             <HomeDashboard 
               experts={experts} 
+              teams={allTeams}
               onSummon={handleGenerate} 
-              onSelectExpert={selectExpert} 
+              onSelectExpert={selectExpert}
+              onCreateTeam={goTeamSetup}
+              onGoLegends={goLegends}
+              onSelectTeam={async (team: TeamContextWithId) => {
+                // Try to load saved structure from database first
+                setTeamContext(team);
+                setCurrentTeamId(team.id);
+                
+                try {
+                  const savedStructure = await getTeamStructure(team.id, user?.id);
+                  if (savedStructure) {
+                    // Instant display - structure is already saved
+                    setTeamStructure(savedStructure);
+                    setState('structure-preview');
+                  } else {
+                    // No saved structure - need to generate
+                    setState('loading');
+                    const structure = await generateTeamStructure(team);
+                    setTeamStructure(structure);
+                    // Note: structure will be saved when user clicks "Save Team"
+                    setState('structure-preview');
+                  }
+                } catch (err) {
+                  console.error('Failed to load team structure:', err);
+                  setState('home');
+                }
+              }}
+              onGoChat={goChat}
+              onLogout={handleLogout}
             />
             {error && (
               <div className="fixed bottom-8 left-1/2 -translate-x-1/2 p-4 bg-red-500/10 border border-red-500/50 text-red-400 rounded-xl font-mono text-xs uppercase tracking-widest animate-pulse z-50">
                 Error: {error}
               </div>
             )}
-            <button 
-              onClick={goDashboard}
-              className="fixed bottom-8 right-8 bg-slate-900 border border-slate-800 p-4 rounded-full shadow-2xl hover:border-cyan-500 transition-all z-40 text-xl"
-            >
-              📊
-            </button>
           </div>
         )}
         
@@ -271,10 +386,27 @@ const App: React.FC = () => {
             onClose={() => setState('display')} 
           />
         )}
+
+        {state === 'legends' && (
+          <LegendsLibrary
+            onSelectLegend={handleSelectLegend}
+            onDraftLegend={handleDraftLegend}
+            onBack={goDashboard}
+          />
+        )}
+
+        {state === 'legend-profile' && selectedLegend && (
+          <LegendProfile
+            legend={selectedLegend}
+            onBack={goLegends}
+            onDraft={handleDraftAndGoHome}
+            onChat={handleChatWithLegend}
+          />
+        )}
       </main>
 
-      {/* Floating Header Bar */}
-      {state !== 'training' && state !== 'loading' && state !== 'landing' && state !== 'auth' && state !== 'dashboard' && state !== 'chat' && state !== 'team-setup' && state !== 'teams' && state !== 'structure-preview' && (
+      {/* Floating Header Bar - shows on display and other views */}
+      {state !== 'training' && state !== 'loading' && state !== 'landing' && state !== 'auth' && state !== 'home' && state !== 'chat' && state !== 'team-setup' && state !== 'structure-preview' && state !== 'legends' && state !== 'legend-profile' && (
         <nav className="fixed top-8 left-0 right-0 z-50 pointer-events-none flex justify-center">
           <button 
             onClick={goDashboard}

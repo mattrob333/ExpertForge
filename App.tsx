@@ -15,7 +15,7 @@ import LegendProfile from './components/LegendProfile';
 import { ExpertPersona, AppState, PersonalityDirection, TeamContext, TeamStructure, Legend } from './types';
 import { generateExpertPersona, generateTeamStructure } from './services/geminiService';
 import { supabase, signOut, onAuthStateChange } from './lib/supabase';
-import { getExperts, saveExpert, getTeamContext, saveTeamContext, getTeamStructure, saveTeamStructure, clearLocalStorage, getAllTeams, TeamContextWithId } from './services/storageService';
+import { getExperts, saveExpert, getTeamContext, saveTeamContext, getTeamStructure, saveTeamStructure, clearLocalStorage, getAllTeams, deleteTeam, TeamContextWithId } from './services/storageService';
 import type { User } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
@@ -300,6 +300,11 @@ const App: React.FC = () => {
             onSave={() => setState('home')}
             onBack={() => setState('team-setup')}
             onGoHome={goDashboard}
+            onExpertCreated={async (expert) => {
+              // Save the custom agent to storage and add to experts list
+              const savedExpert = await saveExpert(expert, user?.id);
+              setExperts(prev => [...prev, savedExpert]);
+            }}
           />
         )}
 
@@ -359,6 +364,19 @@ const App: React.FC = () => {
               }}
               onGoChat={goChat}
               onLogout={handleLogout}
+              onDeleteTeam={async (teamId: string) => {
+                try {
+                  await deleteTeam(teamId);
+                  // Refresh teams list
+                  if (user?.id) {
+                    const updatedTeams = await getAllTeams(user.id);
+                    setAllTeams(updatedTeams);
+                  }
+                } catch (err) {
+                  console.error('Failed to delete team:', err);
+                  setError('Failed to delete team');
+                }
+              }}
             />
             {error && (
               <div className="fixed bottom-8 left-1/2 -translate-x-1/2 p-4 bg-red-500/10 border border-red-500/50 text-red-400 rounded-xl font-mono text-xs uppercase tracking-widest animate-pulse z-50">

@@ -1,8 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ExpertPersona, Source } from '../types';
+import { ExpertPersona, ExpertResource, ResourceRecommendations } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import ReactMarkdown from 'react-markdown';
+import { getExpertResources, saveExpertResource } from '../services/storageService';
+import { generateResourceRecommendations, autoPopulateAllResources } from '../services/geminiService';
 
 interface TrainingDashboardProps {
   persona: ExpertPersona;
@@ -10,18 +12,117 @@ interface TrainingDashboardProps {
 }
 
 const TrainingDashboard: React.FC<TrainingDashboardProps> = ({ persona, onClose }) => {
-  const [sources, setSources] = useState<Source[]>([
-    { id: '1', name: `${persona.name} Core Dossier.pdf`, type: 'pdf', content: persona.introduction },
-    { id: '2', name: 'Identity & Mental Models.txt', type: 'text', content: persona.thinking.problemApproach }
-  ]);
+  const [resources, setResources] = useState<ExpertResource[]>([]);
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model', text: string }[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  // Resource recommendation state
+  const [showRecommendations, setShowRecommendations] = useState(false);
+  const [recommendations, setRecommendations] = useState<ResourceRecommendations | null>(null);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const [autoPopulating, setAutoPopulating] = useState(false);
+  const [populateProgress, setPopulateProgress] = useState({ current: 0, total: 0, item: '' });
+  const [expandedResource, setExpandedResource] = useState<ExpertResource | null>(null);
+
+  // Load resources when component mounts
+  useEffect(() => {
+    if (persona.id) {
+      getExpertResources(persona.id).then(setResources);
+    }
+  }, [persona.id]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isTyping]);
+
+  const handleAskForResources = async () => {
+    setLoadingRecommendations(true);
+    setShowRecommendations(true);
+    try {
+      const result = await generateResourceRecommendations(persona);
+      setRecommendations(result);
+    } catch (err) {
+      console.error('Failed to generate recommendations:', err);
+      setRecommendations({ 
+        introduction: 'I apologize, but I encountered an issue generating my resource recommendations. Please try again.',
+        resources: []
+      });
+    } finally {
+      setLoadingRecommendations(false);
+    }
+  };
+
+  const handleAutoPopulate = async () => {
+    if (!recommendations || recommendations.resources.length === 0) return;
+    
+    setAutoPopulating(true);
+    try {
+      const results = await autoPopulateAllResources(
+        recommendations,
+        persona,
+        (current, total, item) => setPopulateProgress({ current, total, item })
+      );
+      
+      // Save populated resources to storage (only those that weren't skipped)
+      for (const result of results) {
+        if (!result.skipped && result.content) {
+          await saveExpertResource(persona.id, {
+            title: result.resource.title,
+            description: result.resource.description,
+            resourceType: result.resource.category === 'book' ? 'book' : 
+                          result.resource.category === 'website' ? 'url' : 'document',
+            content: result.content,
+            url: result.url,
+            isRecommended: true,
+            isAttached: true,
+          });
+        }
+      }
+      
+      // Refresh resources list
+      const updatedResources = await getExpertResources(persona.id);
+      setResources(updatedResources);
+      setShowRecommendations(false);
+    } catch (err) {
+      console.error('Failed to auto-populate resources:', err);
+    } finally {
+      setAutoPopulating(false);
+      setPopulateProgress({ current: 0, total: 0, item: '' });
+    }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'capability': return '⚡';
+      case 'book': return '📚';
+      case 'website': return '🌐';
+      case 'document': return '📄';
+      case 'data': return '📊';
+      default: return '📦';
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'required': return 'text-red-400 bg-red-500/10 border-red-500/30';
+      case 'recommended': return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+      case 'nice-to-have': return 'text-slate-400 bg-slate-500/10 border-slate-500/30';
+      default: return 'text-slate-400';
+    }
+  };
+
+  const getResourceIcon = (type: string) => {
+    switch (type) {
+      case 'url': return '🔗';
+      case 'book': return '📖';
+      case 'api': return '⚡';
+      case 'tool': return '🛠️';
+      case 'capability': return '⚡';
+      default: return '📄';
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,13 +149,6 @@ const TrainingDashboard: React.FC<TrainingDashboardProps> = ({ persona, onClose 
       setChatHistory(prev => [...prev, { role: 'model', text: "**Systems offline.** Connection lost. Please try re-initializing the uplink." }]);
     } finally {
       setIsTyping(false);
-    }
-  };
-
-  const addSource = () => {
-    const name = prompt("Enter source name (e.g., 'Marketing Strategy 2024'):");
-    if (name) {
-      setSources([...sources, { id: Date.now().toString(), name, type: 'text', content: '' }]);
     }
   };
 
@@ -88,32 +182,58 @@ const TrainingDashboard: React.FC<TrainingDashboardProps> = ({ persona, onClose 
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar: Sources */}
+        {/* Left Sidebar: Resources */}
         <aside className="w-72 border-r border-slate-800 flex flex-col bg-[#0f172a]/20">
           <div className="p-6 space-y-6 flex-1 overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h2 className="text-slate-400 text-[10px] font-mono uppercase tracking-widest font-bold">Sources</h2>
-              <button onClick={addSource} className="text-cyan-400 hover:text-cyan-300 text-xs">+ Add</button>
+              <h2 className="text-slate-400 text-[10px] font-mono uppercase tracking-widest font-bold">Resources</h2>
+              <span className="text-slate-600 text-[10px]">{resources.length} items</span>
             </div>
-            <div className="space-y-3">
-              {sources.map(s => (
-                <div key={s.id} className="p-3 bg-slate-900/50 border border-slate-800 rounded-xl flex items-center gap-3 hover:border-slate-700 transition-all cursor-pointer">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm ${s.type === 'pdf' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
-                    {s.type === 'pdf' ? 'PDF' : 'DOC'}
+            
+            {resources.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-3xl mb-3">📭</div>
+                <p className="text-slate-500 text-xs mb-4">No resources loaded yet</p>
+                <button 
+                  onClick={handleAskForResources}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl transition-all"
+                >
+                  📋 What Resources Do You Need?
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {resources.map(resource => (
+                  <div 
+                    key={resource.id} 
+                    onClick={() => setExpandedResource(resource)}
+                    className="p-3 bg-slate-900/50 border border-slate-800 rounded-xl flex items-center gap-3 hover:border-cyan-500/50 transition-all cursor-pointer group"
+                  >
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm bg-cyan-500/10 text-cyan-400">
+                      {getResourceIcon(resource.resourceType)}
+                    </div>
+                    <div className="truncate flex-1">
+                      <p className="text-slate-200 text-xs truncate font-medium">{resource.title}</p>
+                      <p className="text-slate-500 text-[9px] uppercase tracking-tighter">
+                        {resource.resourceType} {resource.isAttached && '• ✓ Attached'}
+                      </p>
+                    </div>
+                    {resource.content && (
+                      <span className="text-emerald-500 text-xs opacity-0 group-hover:opacity-100 transition-opacity">View</span>
+                    )}
                   </div>
-                  <div className="truncate flex-1">
-                    <p className="text-slate-200 text-xs truncate font-medium">{s.name}</p>
-                    <p className="text-slate-500 text-[9px] uppercase tracking-tighter">Last synced 2m ago</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="p-6 border-t border-slate-800">
-            <div className="p-4 bg-gradient-to-br from-cyan-500/10 to-purple-500/10 border border-cyan-500/20 rounded-2xl">
-              <p className="text-slate-400 text-[10px] leading-tight mb-2">PRO TIP: Upload meeting transcripts to refine {persona.name}&apos;s context memory.</p>
-              <button className="text-cyan-400 text-xs font-bold underline">Learn More</button>
-            </div>
+          
+          <div className="p-4 border-t border-slate-800 space-y-3">
+            <button 
+              onClick={handleAskForResources}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+            >
+              <span>📋</span> What Resources Do You Need?
+            </button>
           </div>
         </aside>
 
@@ -247,6 +367,178 @@ const TrainingDashboard: React.FC<TrainingDashboardProps> = ({ persona, onClose 
           </div>
         </aside>
       </div>
+
+      {/* Resource Recommendations Modal */}
+      {showRecommendations && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white">Resources I Need</h3>
+                <p className="text-slate-500 text-sm mt-1">
+                  {persona.name}'s recommended resources and tools
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRecommendations(false)}
+                className="text-slate-500 hover:text-white text-xl transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              {loadingRecommendations ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-12 h-12 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mb-4"></div>
+                  <p className="text-slate-400 font-mono text-sm">{persona.name} is thinking...</p>
+                </div>
+              ) : autoPopulating ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-12 h-12 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mb-4"></div>
+                  <p className="text-white font-medium mb-2">Auto-populating resources...</p>
+                  <p className="text-slate-400 font-mono text-sm">
+                    {populateProgress.current}/{populateProgress.total}: {populateProgress.item}
+                  </p>
+                </div>
+              ) : recommendations ? (
+                <div className="space-y-6">
+                  <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                    <p className="text-slate-300 leading-relaxed">{recommendations.introduction}</p>
+                  </div>
+                  
+                  {['capability', 'book', 'website', 'document', 'data'].map(category => {
+                    const categoryResources = recommendations.resources.filter(r => r.category === category);
+                    if (categoryResources.length === 0) return null;
+                    
+                    const categoryLabels: Record<string, string> = {
+                      capability: 'Capabilities & Tools',
+                      book: 'Books & Reading',
+                      website: 'Websites & Resources',
+                      document: 'Documents Needed',
+                      data: 'Data Sources'
+                    };
+                    
+                    return (
+                      <div key={category}>
+                        <h4 className="text-cyan-400 font-bold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
+                          <span>{getCategoryIcon(category)}</span>
+                          {categoryLabels[category]}
+                        </h4>
+                        <div className="space-y-2">
+                          {categoryResources.map((resource, idx) => (
+                            <div 
+                              key={idx}
+                              className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-white font-medium">{resource.title}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full border ${getPriorityColor(resource.priority)}`}>
+                                      {resource.priority}
+                                    </span>
+                                  </div>
+                                  <p className="text-slate-400 text-sm leading-relaxed">{resource.description}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            
+            <div className="p-4 border-t border-slate-800 flex gap-3">
+              <button
+                onClick={() => setShowRecommendations(false)}
+                className="flex-1 py-3 border border-slate-700 text-slate-400 rounded-xl text-sm font-medium hover:bg-slate-800 transition-all"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleAutoPopulate}
+                disabled={autoPopulating || !recommendations || recommendations.resources.length === 0}
+                className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white rounded-xl text-sm font-bold hover:from-emerald-500 hover:to-cyan-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <span>🔄</span> Auto-Populate All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expanded Resource View Modal */}
+      {expandedResource && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{getResourceIcon(expandedResource.resourceType)}</span>
+                <div>
+                  <h3 className="text-xl font-bold text-white">{expandedResource.title}</h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full uppercase">
+                      {expandedResource.resourceType}
+                    </span>
+                    {expandedResource.isAttached && (
+                      <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full">
+                        ✓ Attached
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setExpandedResource(null)}
+                className="text-slate-500 hover:text-white text-xl transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              {expandedResource.description && (
+                <div className="mb-4">
+                  <h4 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Description</h4>
+                  <p className="text-slate-300">{expandedResource.description}</p>
+                </div>
+              )}
+              
+              {expandedResource.content ? (
+                <div>
+                  <h4 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Content</h4>
+                  <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+                    <div className="text-slate-300 leading-relaxed whitespace-pre-wrap text-sm">
+                      {expandedResource.content}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-3">📭</div>
+                  <p className="text-slate-400">No content attached yet</p>
+                  <p className="text-slate-500 text-sm mt-1">
+                    This resource needs to be manually configured or uploaded
+                  </p>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-slate-800">
+              <button
+                onClick={() => setExpandedResource(null)}
+                className="w-full py-3 border border-slate-700 text-slate-400 rounded-xl text-sm font-medium hover:bg-slate-800 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

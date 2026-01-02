@@ -64,7 +64,7 @@ const LegendsLibrary: React.FC<LegendsLibraryProps> = ({
                   <span className="text-2xl">🏆</span>
                   <h1 className="text-2xl font-bold text-white tracking-tight">LEGENDS LEAGUE</h1>
                 </div>
-                <p className="text-slate-500 text-sm mt-0.5">Draft the minds that shaped industries</p>
+                <p className="text-slate-500 text-sm mt-0.5">Hire the minds that shaped industries</p>
               </div>
             </div>
             
@@ -166,7 +166,7 @@ const LegendsLibrary: React.FC<LegendsLibraryProps> = ({
                     </button>
                   </div>
                   
-                  <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+                  <div className="grid grid-flow-col auto-cols-[208px] gap-4 overflow-x-auto pb-4 scrollbar-hide">
                     {legends.map((legend) => (
                       <LegendCard
                         key={legend.id}
@@ -207,7 +207,7 @@ const LegendsLibrary: React.FC<LegendsLibraryProps> = ({
             )}
 
             {filteredLegends.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-fr">
                 {filteredLegends.map((legend) => (
                   <LegendCard
                     key={legend.id}

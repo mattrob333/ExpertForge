@@ -1,6 +1,7 @@
 
 import React from 'react';
 import PricingSection from './PricingSection';
+import { LEGENDS } from '../data/legends';
 
 interface LandingPageProps {
   onStart: () => void;
@@ -125,14 +126,41 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
           </div>
 
           <div className="flex overflow-x-auto no-scrollbar gap-6 pb-8">
-            {['Jeff Bezos', 'Steve Jobs', 'Elon Musk', 'Warren Buffett', 'Alex Hormozi'].map((name, i) => (
-              <div key={i} className="min-w-[280px] bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col items-center text-center space-y-4 hover:border-purple-500/30 transition-all">
-                <div className="w-20 h-20 rounded-2xl bg-slate-800 overflow-hidden">
-                  <img src={`https://picsum.photos/seed/${name}/200/200`} alt={name} className="w-full h-full object-cover opacity-60" />
+            {LEGENDS.filter(l => ['bezos', 'jobs', 'musk', 'buffett', 'hormozi'].includes(l.id)).map((legend) => (
+              <div 
+                key={legend.id} 
+                className="group min-w-[240px] bg-gradient-to-b from-slate-800/80 to-slate-900 border border-slate-700/50 rounded-2xl overflow-hidden hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 transition-all duration-300 hover:-translate-y-1"
+              >
+                {/* Photo */}
+                <div className="relative h-36 overflow-hidden">
+                  {legend.photo ? (
+                    <img 
+                      src={legend.photo} 
+                      alt={legend.name} 
+                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500" 
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-purple-600 to-cyan-600 flex items-center justify-center">
+                      <span className="text-4xl font-bold text-white/80">
+                        {legend.name.split(' ').map(n => n[0]).join('')}
+                      </span>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent"></div>
+                  
+                  {/* Rank Badge */}
+                  <div className={`absolute top-3 left-3 w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shadow-lg ${
+                    legend.rank === 1 ? 'bg-gradient-to-br from-yellow-400 to-amber-600 text-black' : 'bg-slate-700 text-slate-300'
+                  }`}>
+                    #{legend.rank}
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-white">{name}</h4>
-                  <p className="text-[10px] font-mono text-purple-400 uppercase tracking-widest mt-1">Cognitive Template</p>
+                
+                {/* Content */}
+                <div className="p-5 text-center space-y-2">
+                  <h4 className="font-bold text-white text-lg">{legend.name}</h4>
+                  <p className="text-cyan-400 text-xs italic">"{legend.title}"</p>
+                  <p className="text-[10px] font-mono text-purple-400 uppercase tracking-widest pt-1">Cognitive Template</p>
                 </div>
               </div>
             ))}

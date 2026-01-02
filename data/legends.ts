@@ -643,7 +643,7 @@ export const LEGENDS: Legend[] = [
     title: 'The Acquisition Architect',
     categories: ['growth', 'sales'],
     rank: 1,
-    photo: 'https://pbs.twimg.com/profile_images/1610661312589705217/sGJezsbC_400x400.jpg',
+    photo: '/images/alexhormozi.jpg',
     
     // IDENTITY
     identity: {

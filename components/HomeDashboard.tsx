@@ -11,6 +11,7 @@ interface HomeDashboardProps {
   onSelectExpert: (expert: ExpertPersona) => void;
   onCreateTeam?: () => void;
   onSelectTeam?: (team: TeamContextWithId) => void;
+  onDeleteTeam?: (teamId: string) => void;
   onGoChat?: () => void;
   onGoLegends?: () => void;
   onLogout?: () => void;
@@ -23,6 +24,7 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onSelectExpert,
   onCreateTeam,
   onSelectTeam,
+  onDeleteTeam,
   onGoChat,
   onGoLegends,
   onLogout,
@@ -81,6 +83,50 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
         )}
       </section>
 
+      {/* Quick Actions */}
+      <section className="space-y-8">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xs font-mono font-bold uppercase tracking-[0.3em] text-slate-500">QUICK ACTIONS</h2>
+          <div className="h-px flex-1 bg-slate-800"></div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {onGoChat && experts.length > 0 && (
+            <button
+              onClick={onGoChat}
+              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-cyan-500/50 transition-all group"
+            >
+              <span className="text-3xl group-hover:scale-110 transition-transform">💬</span>
+              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-cyan-400 transition-colors">Expert Chat</span>
+            </button>
+          )}
+          {onCreateTeam && (
+            <button
+              onClick={onCreateTeam}
+              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-purple-500/50 transition-all group"
+            >
+              <span className="text-3xl group-hover:scale-110 transition-transform">🎯</span>
+              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-purple-400 transition-colors">Build Team</span>
+            </button>
+          )}
+          <button
+            onClick={onGoLegends}
+            className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-amber-500/50 transition-all group"
+          >
+            <span className="text-3xl group-hover:scale-110 transition-transform">🏆</span>
+            <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-amber-400 transition-colors">Legendary Experts</span>
+          </button>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-red-500/50 transition-all group"
+            >
+              <span className="text-3xl group-hover:scale-110 transition-transform">🚪</span>
+              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-red-400 transition-colors">Log Out</span>
+            </button>
+          )}
+        </div>
+      </section>
+
       {/* Summon New Expert Section */}
       <section className="space-y-8">
         <div className="flex items-center gap-4">
@@ -128,13 +174,32 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {teams.map((team, i) => (
-              <button
+              <div
                 key={i}
+                className="group relative flex flex-col gap-4 bg-[#0f172a] border border-slate-800 p-6 rounded-2xl text-left hover:border-purple-500/50 hover:bg-slate-900 transition-all cursor-pointer"
                 onClick={() => onSelectTeam?.(team)}
-                className="group relative flex flex-col gap-4 bg-[#0f172a] border border-slate-800 p-6 rounded-2xl text-left hover:border-purple-500/50 hover:bg-slate-900 transition-all"
               >
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-cyan-600 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-2xl"></div>
-                <div className="flex items-center justify-between">
+                
+                {/* Delete button */}
+                {onDeleteTeam && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete team "${team.name}"? This cannot be undone.`)) {
+                        onDeleteTeam(team.id);
+                      }
+                    }}
+                    className="absolute top-3 right-3 p-2 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
+                    title="Delete team"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                )}
+                
+                <div className="flex items-center justify-between pr-8">
                   <h3 className="text-white font-bold text-lg">{team.name}</h3>
                   <span className="px-3 py-1 bg-purple-500/10 text-purple-400 text-[10px] font-mono uppercase rounded-full">
                     {team.type}
@@ -148,55 +213,12 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </span>
                   ))}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
       </section>
 
-      {/* Quick Actions */}
-      <section className="space-y-8">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xs font-mono font-bold uppercase tracking-[0.3em] text-slate-500">QUICK ACTIONS</h2>
-          <div className="h-px flex-1 bg-slate-800"></div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {onGoChat && experts.length > 0 && (
-            <button
-              onClick={onGoChat}
-              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-cyan-500/50 transition-all group"
-            >
-              <span className="text-3xl group-hover:scale-110 transition-transform">💬</span>
-              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-cyan-400 transition-colors">Team Chat</span>
-            </button>
-          )}
-          {onCreateTeam && (
-            <button
-              onClick={onCreateTeam}
-              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-purple-500/50 transition-all group"
-            >
-              <span className="text-3xl group-hover:scale-110 transition-transform">🎯</span>
-              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-purple-400 transition-colors">Build Team</span>
-            </button>
-          )}
-          <button
-            onClick={onGoLegends}
-            className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-amber-500/50 transition-all group"
-          >
-            <span className="text-3xl group-hover:scale-110 transition-transform">🏆</span>
-            <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-amber-400 transition-colors">Legends</span>
-          </button>
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              className="flex flex-col items-center gap-3 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-red-500/50 transition-all group"
-            >
-              <span className="text-3xl group-hover:scale-110 transition-transform">🚪</span>
-              <span className="text-slate-400 text-xs font-mono uppercase tracking-widest group-hover:text-red-400 transition-colors">Log Out</span>
-            </button>
-          )}
-        </div>
-      </section>
     </div>
   );
 };

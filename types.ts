@@ -117,8 +117,9 @@ export interface TeamSource {
   teamId: string;
   title: string;
   content: string;
-  sourceType: 'text' | 'markdown' | 'file';
+  sourceType: 'text' | 'markdown' | 'file' | 'url';
   fileName?: string;
+  sourceUrl?: string;
   createdAt?: string;
   updatedAt?: string;
 }

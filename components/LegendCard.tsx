@@ -23,7 +23,7 @@ const LegendCard: React.FC<LegendCardProps> = ({ legend, onView, onDraft, compac
 
   return (
     <div 
-      className={`group relative bg-[#1e293b] border border-slate-700 rounded-xl overflow-hidden transition-all duration-300 hover:border-cyan-500/50 hover:-translate-y-1 hover:shadow-lg hover:shadow-cyan-500/10 ${compact ? 'w-52' : 'w-72'}`}
+      className={`group relative bg-[#1e293b] border border-slate-700 rounded-xl overflow-hidden transition-all duration-300 hover:border-cyan-500/50 hover:-translate-y-1 hover:shadow-lg hover:shadow-cyan-500/10 flex flex-col ${compact ? 'min-h-[320px] w-52' : 'min-h-[380px] w-72'}`}
     >
       {/* Rank Badge */}
       <div className={`absolute top-3 left-3 z-10 w-8 h-8 rounded-lg ${getRankStyle(legend.rank)} flex items-center justify-center font-bold text-sm shadow-lg`}>
@@ -53,19 +53,19 @@ const LegendCard: React.FC<LegendCardProps> = ({ legend, onView, onDraft, compac
       </div>
 
       {/* Content Section */}
-      <div className={`p-4 ${compact ? 'space-y-2' : 'space-y-3'}`}>
+      <div className="p-4 flex flex-col flex-1">
         {/* Name */}
         <h3 className={`font-bold text-white ${compact ? 'text-base' : 'text-lg'}`}>
           {legend.name}
         </h3>
         
         {/* Title */}
-        <p className={`text-cyan-400 italic ${compact ? 'text-xs' : 'text-sm'}`}>
+        <p className={`text-cyan-400 italic mt-1 ${compact ? 'text-xs' : 'text-sm'}`}>
           "{legend.title}"
         </p>
 
         {/* Category Tags */}
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 mt-2">
           {legend.categories.slice(0, 2).map((cat) => {
             const catInfo = LEGEND_CATEGORIES[cat];
             return (
@@ -80,15 +80,8 @@ const LegendCard: React.FC<LegendCardProps> = ({ legend, onView, onDraft, compac
           })}
         </div>
 
-        {/* Quote Preview (non-compact only) */}
-        {!compact && (
-          <p className="text-slate-500 text-xs line-clamp-2 italic">
-            "{legend.quote.slice(0, 100)}..."
-          </p>
-        )}
-
         {/* Action Buttons */}
-        <div className={`flex gap-2 pt-2 ${compact ? '' : 'pt-3'}`}>
+        <div className="flex gap-2 mt-auto pt-3">
           <button
             onClick={() => onView(legend)}
             className="flex-1 py-2 px-3 border border-slate-600 rounded-lg text-slate-300 text-xs font-medium uppercase tracking-wider hover:border-cyan-500 hover:text-cyan-400 transition-all"
@@ -100,7 +93,7 @@ const LegendCard: React.FC<LegendCardProps> = ({ legend, onView, onDraft, compac
               onClick={() => onDraft(legend)}
               className="flex-1 py-2 px-3 bg-gradient-to-r from-cyan-600 to-purple-600 rounded-lg text-white text-xs font-bold uppercase tracking-wider hover:from-cyan-500 hover:to-purple-500 transition-all shadow-lg shadow-cyan-900/20"
             >
-              Draft
+              Hire
             </button>
           )}
         </div>

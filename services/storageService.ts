@@ -14,6 +14,10 @@ const isSupabaseConfigured = () => {
   return url && key && url !== '' && key !== '';
 };
 
+// Type-safe Supabase helper to bypass strict typing when tables aren't in schema
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = supabase as any;
+
 // Convert ExpertPersona to database format
 const personaToDbFormat = (persona: ExpertPersona, userId: string) => ({
   user_id: userId,
@@ -54,7 +58,7 @@ const dbToPersonaFormat = (row: any): ExpertPersona => ({
 
 export async function getExperts(userId?: string): Promise<ExpertPersona[]> {
   if (isSupabaseConfigured() && userId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('experts')
       .select('*')
       .eq('user_id', userId)
@@ -82,7 +86,7 @@ export async function getExperts(userId?: string): Promise<ExpertPersona[]> {
 
 export async function saveExpert(persona: ExpertPersona, userId?: string): Promise<ExpertPersona> {
   if (isSupabaseConfigured() && userId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('experts')
       .insert(personaToDbFormat(persona, userId))
       .select()
@@ -105,7 +109,7 @@ export async function saveExpert(persona: ExpertPersona, userId?: string): Promi
 
 export async function deleteExpert(expertId: string, userId?: string): Promise<void> {
   if (isSupabaseConfigured() && userId) {
-    const { error } = await supabase
+    const { error } = await db
       .from('experts')
       .delete()
       .eq('id', expertId)
@@ -134,7 +138,7 @@ export interface TeamContextWithId extends TeamContext {
 // Get all teams for a user
 export async function getAllTeams(userId?: string): Promise<TeamContextWithId[]> {
   if (isSupabaseConfigured() && userId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('teams')
       .select('*')
       .eq('user_id', userId)
@@ -170,7 +174,7 @@ export async function getAllTeams(userId?: string): Promise<TeamContextWithId[]>
 
 export async function getTeamContext(userId?: string): Promise<TeamContext | null> {
   if (isSupabaseConfigured() && userId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('teams')
       .select('*')
       .eq('user_id', userId)
@@ -208,7 +212,7 @@ export async function getTeamContext(userId?: string): Promise<TeamContext | nul
 
 export async function saveTeamContext(context: TeamContext, userId?: string): Promise<string> {
   if (isSupabaseConfigured() && userId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('teams')
       .insert({
         user_id: userId,
@@ -234,11 +238,30 @@ export async function saveTeamContext(context: TeamContext, userId?: string): Pr
   return 'local-team-id';
 }
 
+export async function deleteTeam(teamId: string): Promise<void> {
+  if (isSupabaseConfigured()) {
+    // Delete team (cascades to team_structures and team_sources due to foreign key constraints)
+    const { error } = await db
+      .from('teams')
+      .delete()
+      .eq('id', teamId);
+
+    if (error) {
+      console.error('Error deleting team:', error);
+      throw error;
+    }
+    return;
+  }
+
+  // Fallback to localStorage - just clear the team context
+  localStorage.removeItem(STORAGE_KEYS.teamContext);
+}
+
 // TEAM STRUCTURE
 
 export async function getTeamStructure(teamId?: string, userId?: string): Promise<TeamStructure | null> {
   if (isSupabaseConfigured() && teamId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('team_structures')
       .select('*')
       .eq('team_id', teamId)
@@ -275,7 +298,7 @@ export async function saveTeamStructure(
   teamId?: string
 ): Promise<void> {
   if (isSupabaseConfigured() && teamId) {
-    const { error } = await supabase
+    const { error } = await db
       .from('team_structures')
       .upsert({
         team_id: teamId,
@@ -318,7 +341,7 @@ const dbToSourceFormat = (row: any): TeamSource => ({
 
 export async function getTeamSources(teamId: string): Promise<TeamSource[]> {
   if (isSupabaseConfigured() && teamId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('team_sources')
       .select('*')
       .eq('team_id', teamId)
@@ -349,7 +372,7 @@ export async function saveTeamSource(
   source: Omit<TeamSource, 'id' | 'teamId' | 'createdAt' | 'updatedAt'>
 ): Promise<TeamSource> {
   if (isSupabaseConfigured() && teamId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('team_sources')
       .insert({
         team_id: teamId,
@@ -385,7 +408,7 @@ export async function saveTeamSource(
 
 export async function deleteTeamSource(sourceId: string, teamId: string): Promise<void> {
   if (isSupabaseConfigured()) {
-    const { error } = await supabase
+    const { error } = await db
       .from('team_sources')
       .delete()
       .eq('id', sourceId);
@@ -422,7 +445,7 @@ const dbToResourceFormat = (row: any): ExpertResource => ({
 
 export async function getExpertResources(expertId: string): Promise<ExpertResource[]> {
   if (isSupabaseConfigured() && expertId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('expert_resources')
       .select('*')
       .eq('expert_id', expertId)
@@ -453,7 +476,7 @@ export async function saveExpertResource(
   resource: Omit<ExpertResource, 'id' | 'expertId' | 'createdAt' | 'updatedAt'>
 ): Promise<ExpertResource> {
   if (isSupabaseConfigured() && expertId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('expert_resources')
       .insert({
         expert_id: expertId,
@@ -492,7 +515,7 @@ export async function saveExpertResource(
 
 export async function deleteExpertResource(resourceId: string, expertId: string): Promise<void> {
   if (isSupabaseConfigured()) {
-    const { error } = await supabase
+    const { error } = await db
       .from('expert_resources')
       .delete()
       .eq('id', resourceId);
@@ -508,4 +531,33 @@ export async function deleteExpertResource(resourceId: string, expertId: string)
   const resources = await getExpertResources(expertId);
   const updatedResources = resources.filter(r => r.id !== resourceId);
   localStorage.setItem(`expert_resources_${expertId}`, JSON.stringify(updatedResources));
+}
+
+// ROLE ASSIGNMENTS
+
+export interface RoleAssignment {
+  nodeId: string;
+  expertId?: string | null;
+  legendId?: string | null;
+  humanName?: string | null;
+  humanEmail?: string | null;
+  humanTitle?: string | null;
+  customAgentId?: string | null;
+}
+
+export async function getRoleAssignments(teamId: string): Promise<RoleAssignment[]> {
+  // For now, use localStorage since we don't have a Supabase table yet
+  const stored = localStorage.getItem(`role_assignments_${teamId}`);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+export async function saveRoleAssignments(teamId: string, assignments: RoleAssignment[]): Promise<void> {
+  localStorage.setItem(`role_assignments_${teamId}`, JSON.stringify(assignments));
 }

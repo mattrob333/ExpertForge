@@ -1,49 +1,77 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+<img width="1200" height="475" alt="ExpertForge Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+
+# ExpertForge
+
+**AI-Powered Expert Persona & Advisory Team Builder**
+
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?logo=typescript)](https://typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-7.x-646CFF?logo=vite)](https://vitejs.dev)
+[![Gemini](https://img.shields.io/badge/Gemini-AI-4285F4?logo=google)](https://ai.google.dev)
+[![Supabase](https://img.shields.io/badge/Supabase-Auth%20%26%20DB-3ECF8E?logo=supabase)](https://supabase.com)
+
 </div>
 
-# Run and deploy your AI Studio app
+---
 
-This contains everything you need to run your app locally.
+## Overview
 
-View your app in AI Studio: https://ai.studio/apps/drive/1htyLbRQ2mOBVTx9x8aFSxqGoBUsmPU-0
+ExpertForge transforms generic AI outputs into **domain-specific expert personas** with deep personality profiles, mental models, and expertise maps. Build complete **AI advisory teams** with organizational hierarchies, assign agents to roles, and chat with your experts in context.
 
-## ExpertForge
+### Key Capabilities
 
-An AI-powered expert persona generator that transforms generic LLM outputs into domain-specific expert personas. Create detailed knowledge worker "dossiers" with deep personality profiles, mental models, expertise maps, and complete advisory board teams with organizational hierarchy visualizations.
+- 🧠 **Expert Persona Generation** - Create detailed AI personas with beliefs, mental models, expertise tiers, and unique personalities
+- 👥 **Advisory Board Teams** - Generate 12-node hierarchical team structures tailored to your organization
+- 📊 **Interactive Org Charts** - React Flow visualization with role-based color coding and Dagre layout
+- 💬 **Role-Based Chat** - Chat with assigned agents in the context of their organizational role
+- 🏆 **Legendary Business Minds** - Draft cognitive templates of Bezos, Jobs, Musk, Buffett, and more
+- 🔗 **URL Scraping** - Import company context by scraping website content with Google Search grounding
+- 🎨 **Cyberpunk UI** - Dark theme with cyan/purple glow accents and glassmorphism effects
 
-## Features
+---
 
-- **Expert Persona Generation** - AI creates detailed dossiers with beliefs, mental models, expertise tiers
-- **Advisory Board Teams** - Generate complete 12-node hierarchical team structures
-- **Interactive Org Charts** - React Flow visualization with 3D stacked nodes and Dagre layout
-- **Multi-Agent Chat** - Chat with personas individually or as a team with @mentions
-- **Authentication** - Supabase Auth with email/password and Google OAuth
-- **Payments** - Stripe integration for subscription tiers
-- **Cyberpunk UI** - Dark theme with cyan/purple glow accents
+## Screenshots
+
+| Landing Page | Team Builder | Role Workspace |
+|:---:|:---:|:---:|
+| Marketing page with pricing | Org chart with drag-and-drop | Full role management modal |
+
+---
 
 ## Quick Start
 
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/expertforge.git
+cd expertforge
+
 # Install dependencies
 npm install
 
-# Copy environment file and add your keys
-cp .env.example .env.local
+# Set up environment variables
+cp .env.example .env
+
+# Add your API keys to .env
+# VITE_API_KEY=your_gemini_api_key
 
 # Run development server
 npm run dev
 ```
 
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+---
+
 ## Environment Variables
 
-Create a `.env.local` file with:
+Create a `.env` file in the root directory:
 
 ```bash
-# Required: Gemini API for AI generation
-GEMINI_API_KEY=your_gemini_api_key
+# Required: Google Gemini API Key
+VITE_API_KEY=your_gemini_api_key
 
-# Optional: Supabase for auth & persistence (uses localStorage fallback if not set)
+# Optional: Supabase (uses localStorage fallback if not set)
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
@@ -51,65 +79,209 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_key
 ```
 
-## Supabase Setup
+### Getting a Gemini API Key
 
-1. Create a new Supabase project at [supabase.com](https://supabase.com)
-2. Run the SQL schema in `supabase/schema.sql` in your Supabase SQL Editor
-3. Enable Google OAuth in Authentication > Providers (optional)
-4. Add your Supabase URL and anon key to `.env.local`
+1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Click "Create API Key"
+3. Copy the key to your `.env` file
 
-## Stripe Setup (Optional)
+---
 
-1. Create a Stripe account at [stripe.com](https://stripe.com)
-2. Create products and prices in the Stripe Dashboard
-3. Update price IDs in `lib/stripe.ts`
-4. Add your publishable key to `.env.local`
-5. Set up a backend endpoint for creating checkout sessions
+## Features Deep Dive
+
+### Expert Persona Generation
+
+Each generated expert includes:
+- **Core Identity**: Name, essence, introduction, avatar
+- **Expertise Map**: Deep mastery, working knowledge, growth areas
+- **Mental Models**: Frameworks and thinking patterns
+- **Core Beliefs**: Opinionated stances they'll defend
+- **Personality**: Communication style, quirks, honest limits
+- **Influences**: Books, people, and frameworks they reference
+
+### Team Builder
+
+The Team Builder creates organizational structures with:
+- **12-Node Hierarchies**: CEO, VPs, Directors, Managers, Specialists
+- **Role-Specific Agents**: Generate AI tailored to each position
+- **Knowledge Sources**: Add company context via text, files, or URL scraping
+- **Human Assignment**: Track which humans fill which roles
+- **Backup Advisors**: Assign legendary business minds as fallback consultants
+
+### Role Workspace
+
+Click any node in the org chart to open the Role Workspace:
+- **Left Panel**: Primary agent, human team member, backup advisor, sub-agents
+- **Center Panel**: Chat interface with the assigned agent
+- **Right Panel**: Knowledge sources and quick actions
+- **Persistence**: Assignments save automatically to localStorage
+
+### Legends Library
+
+Pre-built cognitive templates based on documented thinking patterns:
+- Jeff Bezos - Customer Obsessed Operator
+- Steve Jobs - The Taste Architect  
+- Elon Musk - First Principles Disruptor
+- Warren Buffett - Value Investing Oracle
+- Alex Hormozi - Offer Creation Strategist
+- And more...
+
+---
 
 ## Tech Stack
 
-- **Frontend**: React 19 + TypeScript + Vite
-- **AI**: Google Gemini API (`@google/genai`)
-- **Visualization**: ReactFlow + Dagre for org charts
-- **Styling**: Tailwind CSS (CDN)
-- **Auth**: Supabase Auth
-- **Database**: Supabase (PostgreSQL)
-- **Payments**: Stripe
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 19, TypeScript 5, Vite 7 |
+| **AI** | Google Gemini API (`@google/genai`) with structured output schemas |
+| **Visualization** | React Flow, Dagre layout algorithm |
+| **Styling** | Tailwind CSS (CDN), custom cyberpunk theme |
+| **Auth** | Supabase Auth (email/password, Google OAuth) |
+| **Database** | Supabase PostgreSQL, localStorage fallback |
+| **Payments** | Stripe (optional) |
+
+---
 
 ## Project Structure
 
 ```
 ExpertForge/
-├── components/          # React components
-│   ├── AuthPage.tsx     # Authentication UI
-│   ├── CommandCenter.tsx # Main dashboard
-│   ├── ExpertCard.tsx   # Persona dossier view
-│   ├── LandingPage.tsx  # Marketing landing page
-│   ├── TeamChat.tsx     # Multi-agent chat
-│   ├── TeamSetup.tsx    # Team configuration
-│   └── TeamStructurePreview.tsx  # Org chart visualization
-├── lib/                 # Utilities
-│   ├── supabase.ts      # Supabase client & auth helpers
-│   ├── stripe.ts        # Stripe integration
-│   ├── layoutOrgChart.ts # Dagre layout algorithm
-│   └── database.types.ts # TypeScript types for Supabase
-├── services/            # Business logic
-│   ├── geminiService.ts # AI generation with structured schemas
-│   └── storageService.ts # Data persistence layer
+├── components/              # React components
+│   ├── AuthPage.tsx         # Login/signup UI
+│   ├── HomeDashboard.tsx    # Main dashboard with experts & teams
+│   ├── ExpertCard.tsx       # Detailed persona dossier view
+│   ├── LandingPage.tsx      # Marketing page with pricing
+│   ├── LegendCard.tsx       # Legend persona cards
+│   ├── TeamBuilder.tsx      # Org chart + Role Workspace modal
+│   ├── TeamChat.tsx         # Multi-agent chat interface
+│   ├── TeamSetup.tsx        # Team configuration wizard
+│   └── PricingSection.tsx   # Subscription tiers
+├── data/
+│   └── legends.ts           # Pre-built legendary personas
+├── lib/
+│   ├── supabase.ts          # Supabase client & auth
+│   ├── stripe.ts            # Stripe integration
+│   └── layoutOrgChart.ts    # Dagre layout helpers
+├── services/
+│   ├── geminiService.ts     # AI generation (personas, teams, scraping)
+│   └── storageService.ts    # Data persistence layer
 ├── supabase/
-│   └── schema.sql       # Database schema
-├── types.ts             # TypeScript interfaces
-└── App.tsx              # Main app with state machine
+│   ├── schema.sql           # Main database schema
+│   └── migrations/          # Schema migrations
+├── public/
+│   └── images/              # Legend avatar photos
+├── types.ts                 # TypeScript interfaces
+├── App.tsx                  # Main app with state machine
+└── index.html               # Entry point
 ```
 
-## Development Commands
+---
+
+## API Reference
+
+### Gemini Service Functions
+
+| Function | Description |
+|----------|-------------|
+| `generateExpertPersona(description, direction?)` | Create a new expert persona |
+| `generateTeamStructure(context)` | Generate 12-node team hierarchy |
+| `generateCustomAgentForRole(role, context, sources)` | Create role-specific agent |
+| `scrapeUrlContent(url)` | Extract business context from URL |
+| `generateResourceRecommendations(persona)` | Get resource suggestions |
+| `autoPopulateResource(resource, persona)` | Fetch resource content |
+
+### Storage Service Functions
+
+| Function | Description |
+|----------|-------------|
+| `getExperts(userId)` / `saveExpert(persona, userId)` | Expert CRUD |
+| `getAllTeams(userId)` / `saveTeamContext(context, userId)` | Team CRUD |
+| `getTeamStructure(teamId)` / `saveTeamStructure(structure, teamId)` | Structure CRUD |
+| `getTeamSources(teamId)` / `saveTeamSource(teamId, source)` | Sources CRUD |
+| `getRoleAssignments(teamId)` / `saveRoleAssignments(teamId, assignments)` | Role assignments |
+
+---
+
+## Database Schema
+
+### Tables
+
+- **experts** - Generated AI personas
+- **teams** - Team context (name, industry, needs)
+- **team_structures** - Org chart nodes and edges
+- **team_sources** - Knowledge base documents
+- **expert_resources** - Per-expert resources and tools
+
+See `supabase/schema.sql` for full schema.
+
+---
+
+## Development
 
 ```bash
-npm run dev      # Start dev server on port 3000
-npm run build    # Build for production
-npm run preview  # Preview production build
+# Start dev server
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+
+# Type check
+npx tsc --noEmit
 ```
+
+---
+
+## Deployment
+
+### Netlify (Recommended)
+
+1. Connect your GitHub repository to Netlify
+2. Set build command: `npm run build`
+3. Set publish directory: `dist`
+4. Add environment variables in Netlify dashboard
+
+### Vercel
+
+1. Import project from GitHub
+2. Framework preset: Vite
+3. Add environment variables
+
+---
+
+## Roadmap
+
+- [ ] Sub-agent support for specialized role assistants
+- [ ] Team chat with @mentions across all agents
+- [ ] Export team configurations as JSON
+- [ ] Role analytics and performance tracking
+- [ ] Voice chat with agents
+- [ ] Mobile responsive improvements
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+**Built with ❤️ and AI**
+
+[Report Bug](https://github.com/yourusername/expertforge/issues) · [Request Feature](https://github.com/yourusername/expertforge/issues)
+
+</div>

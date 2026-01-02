@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { ExpertPersona, PersonalityDirection, TeamContext, TeamStructure, ResourceRecommendations, ResourceRequest } from "../types";
+import { ExpertPersona, PersonalityDirection, TeamContext, TeamStructure, ResourceRecommendations, ResourceRequest, TeamSource } from "../types";
 
 const PERSONA_SCHEMA = {
   type: Type.OBJECT,
@@ -211,13 +211,22 @@ QUALITY CRITERIA:
 `;
 
 export async function generateExpertPersona(description: string, direction?: PersonalityDirection): Promise<ExpertPersona> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
   
   const prompt = `
 ${PERSONA_META_PROMPT}
 
 Now create a detailed expert persona based on this description: "${description}"
 ${direction ? `Personality direction: ${direction} (infuse this energy throughout their character)` : ''}
+
+NAMING AND GENDER REQUIREMENTS (CRITICAL):
+- GENDER: Generate a MALE persona 70% of the time, female 30% of the time. Lean toward male.
+- NAMING: Use primarily American, British, Australian, or Western European names
+- Examples of good male names: "Marcus Chen", "David Hartley", "Ryan O'Connor", "James Mitchell", "Michael Torres", "Chris Anderson", "Tom Bradley"
+- Examples of good female names: "Sarah Mitchell", "Kate Reynolds", "Emily Chen", "Rachel Torres"
+- Avoid overly exotic or difficult-to-pronounce names
+- Do NOT reuse common last names like Vance, Vane, Stone, Gray, Sterling, Cross
+- The name should feel professional and relatable to a Western business audience
 
 The introduction MUST be in first person, 2-3 sentences, showing personality not credentials.
 Example good intro: "Hey! I'm [Name] — I spend most of my time thinking about [domain] and getting unreasonably excited about [specific interest]. I have strong opinions about [topic]. What's on your mind?"
@@ -228,7 +237,7 @@ Make the quirks specific and memorable. Give them honest limits they'd acknowled
   `;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'models/gemini-3-flash-preview',
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -285,7 +294,7 @@ Style requirements:
 }
 
 export async function generateTeamStructure(context: TeamContext): Promise<TeamStructure> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
   
   const prompt = `
     Generate an optimal 12-node hierarchical advisory team structure.
@@ -325,7 +334,7 @@ export async function generateTeamStructure(context: TeamContext): Promise<TeamS
   `;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'models/gemini-3-flash-preview',
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -338,7 +347,7 @@ export async function generateTeamStructure(context: TeamContext): Promise<TeamS
 
 // Generate resource recommendations from an expert's perspective (structured JSON)
 export async function generateResourceRecommendations(persona: ExpertPersona): Promise<ResourceRecommendations> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
   
   const prompt = `
 You are ${persona.name}, ${persona.essence}.
@@ -388,7 +397,7 @@ export async function autoPopulateResource(
   resource: ResourceRequest, 
   persona: ExpertPersona
 ): Promise<{ content: string; url?: string }> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
   
   const searchQuery = resource.searchQuery || `${resource.title} ${resource.category === 'book' ? 'summary key insights' : ''}`;
   
@@ -500,4 +509,165 @@ export async function autoPopulateAllResources(
   
   onProgress?.(total, total, 'Complete');
   return results;
+}
+
+// Scrape content from a URL using Google Search grounding
+export async function scrapeUrlContent(url: string): Promise<{
+  title: string;
+  content: string;
+}> {
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+  
+  const prompt = `Visit and analyze this URL: ${url}
+
+Extract and summarize the key business information from this website. Include:
+
+1. **Company/Organization Overview**: What does this company do? What's their mission?
+2. **Products/Services**: What do they offer?
+3. **Target Market**: Who are their customers?
+4. **Key Differentiators**: What makes them unique?
+5. **Team/Leadership**: Any notable team information
+6. **Recent News/Updates**: Any recent developments mentioned
+7. **Contact/Location**: Basic contact info if available
+
+Format this as a comprehensive business context document that could be used to train an AI advisor about this organization.
+
+Also suggest a concise title for this source (e.g., "Company X Overview" or "Product Documentation").`;
+
+  const response = await ai.models.generateContent({
+    model: 'models/gemini-3-flash-preview',
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }]
+    }
+  });
+
+  const content = response.text || '';
+  
+  // Extract a title from the content or generate one from the URL
+  let title = 'Website Content';
+  try {
+    const urlObj = new URL(url);
+    title = urlObj.hostname.replace('www.', '').split('.')[0];
+    title = title.charAt(0).toUpperCase() + title.slice(1) + ' - Website';
+  } catch {
+    // Keep default title
+  }
+
+  // Try to extract suggested title from the response
+  const titleMatch = content.match(/title[:\s]+["']?([^"'\n]+)["']?/i);
+  if (titleMatch) {
+    title = titleMatch[1].trim();
+  }
+
+  return { title, content };
+}
+
+// Generate a custom AI agent for a specific role using team context and sources
+export async function generateCustomAgentForRole(
+  roleName: string,
+  teamContext: TeamContext,
+  teamSources: TeamSource[]
+): Promise<ExpertPersona> {
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+  
+  // Compile all team sources into context
+  const sourcesContext = teamSources.map(source => 
+    `--- ${source.title} ---\n${source.content}`
+  ).join('\n\n');
+  
+  const prompt = `
+${PERSONA_META_PROMPT}
+
+You are creating an AI expert specifically for this role and organization:
+
+ROLE: ${roleName}
+ORGANIZATION: ${teamContext.name}
+ORGANIZATION TYPE: ${teamContext.type}
+INDUSTRY: ${teamContext.industry || 'General'}
+DESCRIPTION: ${teamContext.description}
+KEY NEEDS: ${teamContext.needs.join(', ')}
+
+ORGANIZATIONAL KNOWLEDGE BASE:
+${sourcesContext || 'No additional sources provided.'}
+
+Create a detailed expert persona that:
+1. Is specifically tailored to excel in the "${roleName}" role
+2. Deeply understands this organization's context, products, and challenges
+3. Has expertise relevant to the organization's industry and needs
+4. Can speak authentically about the specific business context provided
+5. Would be a valuable advisor for someone in this exact role at this exact company
+
+NAMING AND GENDER REQUIREMENTS (CRITICAL):
+- GENDER: Generate a MALE persona 70% of the time, female 30% of the time. Lean toward male.
+- NAMING: Use primarily American, British, Australian, or Western European names
+- Examples of good male names: "Marcus Chen", "David Hartley", "Ryan O'Connor", "James Mitchell", "Michael Torres", "Chris Anderson", "Tom Bradley"
+- Examples of good female names: "Sarah Mitchell", "Kate Reynolds", "Emily Chen", "Rachel Torres"
+- Avoid overly exotic or difficult-to-pronounce names
+- Do NOT reuse common last names like Vance, Vane, Stone, Gray, Sterling, Cross
+- The name should feel professional and relatable to a Western business audience
+
+The introduction MUST reference their role and the organization naturally.
+Example: "Hey, I'm [Name] — I've been thinking a lot about ${teamContext.name}'s growth challenges, especially around [specific area]. As your ${roleName}, I'm focused on [key responsibility]. What's on your mind?"
+
+Make their expertise, beliefs, and mental models specifically relevant to:
+- The role they're filling (${roleName})
+- The organization's industry and context
+- The challenges mentioned in the knowledge base
+`;
+
+  const response = await ai.models.generateContent({
+    model: 'models/gemini-3-flash-preview',
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: PERSONA_SCHEMA,
+    }
+  });
+
+  const persona: ExpertPersona = {
+    ...JSON.parse(response.text),
+    id: Math.random().toString(36).substr(2, 9)
+  };
+  
+  // Generate an avatar for the persona
+  try {
+    const avatarPrompt = `Professional LinkedIn headshot photograph of a real human person who works as a ${roleName} at a ${teamContext.industry || 'technology'} company.
+
+Style requirements:
+- Professional business headshot, shoulders up
+- Neutral or softly blurred office/studio background
+- Natural, confident smile with direct eye contact
+- Professional business attire appropriate for a ${roleName}
+- Soft, flattering studio lighting
+- High resolution, sharp focus on face
+- Photorealistic, NOT digital art or illustration
+- Diverse representation welcome`;
+
+    const avatarResponse = await ai.models.generateContent({
+      model: 'models/gemini-3-pro-image-preview',
+      contents: {
+        parts: [
+          { text: avatarPrompt }
+        ]
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1"
+        }
+      }
+    });
+
+    for (const part of avatarResponse.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        persona.avatarUrl = `data:image/png;base64,${part.inlineData.data}`;
+        break;
+      }
+    }
+  } catch (err) {
+    console.error("Failed to generate avatar, using placeholder", err);
+    persona.avatarUrl = `https://picsum.photos/seed/${encodeURIComponent(persona.name)}/400/400`;
+  }
+
+  return persona;
 }

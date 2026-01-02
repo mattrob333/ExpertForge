@@ -8,6 +8,10 @@ const PERSONA_SCHEMA = {
     name: { type: Type.STRING },
     essence: { type: Type.STRING },
     introduction: { type: Type.STRING },
+    category: { 
+      type: Type.STRING,
+      enum: ['marketing', 'sales', 'engineering', 'product', 'finance', 'operations', 'hr', 'legal', 'consulting', 'strategy', 'design', 'data', 'leadership', 'general']
+    },
     stats: {
       type: Type.OBJECT,
       properties: {
@@ -97,7 +101,7 @@ const PERSONA_SCHEMA = {
     }
   },
   required: [
-    "name", "essence", "introduction", "stats", "coreBeliefs", 
+    "name", "essence", "introduction", "category", "stats", "coreBeliefs", 
     "aesthetics", "expertiseMap", "thinking", "personality", "sidebar"
   ]
 };
@@ -228,6 +232,10 @@ NAMING AND GENDER REQUIREMENTS (CRITICAL):
 - Do NOT reuse common last names like Vance, Vane, Stone, Gray, Sterling, Cross
 - The name should feel professional and relatable to a Western business audience
 
+CATEGORY ASSIGNMENT (CRITICAL):
+Based on the expertise description, assign ONE category from: marketing, sales, engineering, product, finance, operations, hr, legal, consulting, strategy, design, data, leadership, general
+Choose the MOST relevant category based on their primary expertise area.
+
 The introduction MUST be in first person, 2-3 sentences, showing personality not credentials.
 Example good intro: "Hey! I'm [Name] — I spend most of my time thinking about [domain] and getting unreasonably excited about [specific interest]. I have strong opinions about [topic]. What's on your mind?"
 
@@ -252,7 +260,16 @@ Make the quirks specific and memorable. Give them honest limits they'd acknowled
   
   // Now generate an avatar for the persona
   try {
-    const avatarPrompt = `Professional LinkedIn headshot photograph of a real human person who works as a ${persona.name.includes(' ') ? '' : 'business professional named '}${persona.essence}. 
+    // Determine gender from name for accurate avatar generation
+    const firstName = persona.name.split(' ')[0];
+    const maleNames = ['marcus', 'james', 'michael', 'david', 'ryan', 'chris', 'tom', 'john', 'william', 'robert', 'daniel', 'matthew', 'andrew', 'joseph', 'charles', 'thomas', 'brian', 'kevin', 'jason', 'jeff', 'steve', 'mark', 'paul', 'alex', 'nick', 'eric', 'adam', 'scott', 'ben', 'jake', 'sam', 'luke', 'evan', 'sean', 'tyler', 'brandon', 'justin', 'aaron', 'connor', 'dylan', 'noah', 'ethan', 'logan', 'mason', 'liam', 'jack', 'henry', 'owen', 'caleb', 'nathan', 'ian', 'cole', 'derek', 'kyle', 'chad', 'brad', 'troy', 'chase', 'blake', 'grant', 'drew', 'miles', 'trevor', 'garrett', 'spencer', 'jordan', 'cameron', 'hunter', 'carter', 'landon', 'parker', 'cooper', 'jackson', 'grayson', 'hudson', 'austin', 'wyatt', 'easton', 'carson', 'maverick', 'silas', 'soren', 'marcus', 'dimitri', 'viktor', 'sergei', 'ahmed', 'omar', 'raj', 'arjun', 'wei', 'chen', 'hiroshi', 'kenji', 'carlos', 'miguel', 'antonio', 'jose', 'rafael', 'diego', 'fernando', 'ricardo'];
+    const femaleNames = ['sarah', 'emily', 'jessica', 'ashley', 'jennifer', 'amanda', 'stephanie', 'nicole', 'melissa', 'michelle', 'elizabeth', 'megan', 'laura', 'rachel', 'heather', 'amy', 'rebecca', 'katherine', 'christine', 'lisa', 'anna', 'karen', 'nancy', 'betty', 'dorothy', 'sandra', 'margaret', 'helen', 'samantha', 'catherine', 'emma', 'olivia', 'ava', 'sophia', 'isabella', 'mia', 'charlotte', 'amelia', 'harper', 'evelyn', 'abigail', 'ella', 'scarlett', 'grace', 'victoria', 'riley', 'aria', 'lily', 'aurora', 'zoey', 'nora', 'hannah', 'natalie', 'hazel', 'penelope', 'chloe', 'layla', 'ellie', 'stella', 'lucy', 'claire', 'maya', 'alice', 'madeline', 'eliana', 'ivy', 'kinsley', 'julia', 'valentina', 'kate', 'rachel', 'elara', 'zara', 'priya', 'aisha', 'yuki', 'mei', 'lin', 'sofia', 'maria', 'ana', 'carmen', 'lucia', 'elena', 'adriana', 'gabriela', 'valentina', 'camila', 'mariana'];
+    
+    const isMale = maleNames.includes(firstName.toLowerCase());
+    const isFemale = femaleNames.includes(firstName.toLowerCase());
+    const genderHint = isMale ? 'male' : isFemale ? 'female' : 'professional';
+    
+    const avatarPrompt = `Professional LinkedIn headshot photograph of a ${genderHint} business professional named ${persona.name}, who is described as: ${persona.essence}. 
 
 Style requirements:
 - Professional business headshot, shoulders up
@@ -262,7 +279,7 @@ Style requirements:
 - Soft, flattering studio lighting (not harsh or dramatic)
 - High resolution, sharp focus on face
 - Photorealistic, NOT digital art or illustration
-- Diverse representation welcome
+- The person should look like someone named "${persona.name}"
 - Clean, polished, trustworthy appearance suitable for a corporate website or LinkedIn profile`;
 
     const avatarResponse = await ai.models.generateContent({
@@ -607,6 +624,10 @@ NAMING AND GENDER REQUIREMENTS (CRITICAL):
 - Do NOT reuse common last names like Vance, Vane, Stone, Gray, Sterling, Cross
 - The name should feel professional and relatable to a Western business audience
 
+CATEGORY ASSIGNMENT (CRITICAL):
+Based on the role "${roleName}", assign ONE category from: marketing, sales, engineering, product, finance, operations, hr, legal, consulting, strategy, design, data, leadership, general
+Choose the MOST relevant category for this role.
+
 The introduction MUST reference their role and the organization naturally.
 Example: "Hey, I'm [Name] — I've been thinking a lot about ${teamContext.name}'s growth challenges, especially around [specific area]. As your ${roleName}, I'm focused on [key responsibility]. What's on your mind?"
 
@@ -632,7 +653,16 @@ Make their expertise, beliefs, and mental models specifically relevant to:
   
   // Generate an avatar for the persona
   try {
-    const avatarPrompt = `Professional LinkedIn headshot photograph of a real human person who works as a ${roleName} at a ${teamContext.industry || 'technology'} company.
+    // Determine gender from name for accurate avatar generation
+    const firstName = persona.name.split(' ')[0];
+    const maleNames = ['marcus', 'james', 'michael', 'david', 'ryan', 'chris', 'tom', 'john', 'william', 'robert', 'daniel', 'matthew', 'andrew', 'joseph', 'charles', 'thomas', 'brian', 'kevin', 'jason', 'jeff', 'steve', 'mark', 'paul', 'alex', 'nick', 'eric', 'adam', 'scott', 'ben', 'jake', 'sam', 'luke', 'evan', 'sean', 'tyler', 'brandon', 'justin', 'aaron', 'connor', 'dylan', 'noah', 'ethan', 'logan', 'mason', 'liam', 'jack', 'henry', 'owen', 'caleb', 'nathan', 'ian', 'cole', 'derek', 'kyle', 'chad', 'brad', 'troy', 'chase', 'blake', 'grant', 'drew', 'miles', 'trevor', 'garrett', 'spencer', 'jordan', 'cameron', 'hunter', 'carter', 'landon', 'parker', 'cooper', 'jackson', 'grayson', 'hudson', 'austin', 'wyatt', 'easton', 'carson', 'maverick', 'silas', 'soren', 'dimitri', 'viktor', 'sergei', 'ahmed', 'omar', 'raj', 'arjun', 'wei', 'chen', 'hiroshi', 'kenji', 'carlos', 'miguel', 'antonio', 'jose', 'rafael', 'diego', 'fernando', 'ricardo'];
+    const femaleNames = ['sarah', 'emily', 'jessica', 'ashley', 'jennifer', 'amanda', 'stephanie', 'nicole', 'melissa', 'michelle', 'elizabeth', 'megan', 'laura', 'rachel', 'heather', 'amy', 'rebecca', 'katherine', 'christine', 'lisa', 'anna', 'karen', 'nancy', 'betty', 'dorothy', 'sandra', 'margaret', 'helen', 'samantha', 'catherine', 'emma', 'olivia', 'ava', 'sophia', 'isabella', 'mia', 'charlotte', 'amelia', 'harper', 'evelyn', 'abigail', 'ella', 'scarlett', 'grace', 'victoria', 'riley', 'aria', 'lily', 'aurora', 'zoey', 'nora', 'hannah', 'natalie', 'hazel', 'penelope', 'chloe', 'layla', 'ellie', 'stella', 'lucy', 'claire', 'maya', 'alice', 'madeline', 'eliana', 'ivy', 'kinsley', 'julia', 'valentina', 'kate', 'elara', 'zara', 'priya', 'aisha', 'yuki', 'mei', 'lin', 'sofia', 'maria', 'ana', 'carmen', 'lucia', 'elena', 'adriana', 'gabriela', 'camila', 'mariana'];
+    
+    const isMale = maleNames.includes(firstName.toLowerCase());
+    const isFemale = femaleNames.includes(firstName.toLowerCase());
+    const genderHint = isMale ? 'male' : isFemale ? 'female' : 'professional';
+    
+    const avatarPrompt = `Professional LinkedIn headshot photograph of a ${genderHint} business professional named ${persona.name}, who works as a ${roleName} at a ${teamContext.industry || 'technology'} company.
 
 Style requirements:
 - Professional business headshot, shoulders up
@@ -642,7 +672,7 @@ Style requirements:
 - Soft, flattering studio lighting
 - High resolution, sharp focus on face
 - Photorealistic, NOT digital art or illustration
-- Diverse representation welcome`;
+- The person should look like someone named "${persona.name}"`;
 
     const avatarResponse = await ai.models.generateContent({
       model: 'models/gemini-3-pro-image-preview',

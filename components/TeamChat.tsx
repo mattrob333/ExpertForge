@@ -1,8 +1,49 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ExpertPersona } from '../types';
+import { ExpertPersona, ExpertCategory } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import ReactMarkdown from 'react-markdown';
+
+// Infer category from expert's essence/role if not set
+const inferCategory = (expert: ExpertPersona): ExpertCategory => {
+  if (expert.category) return expert.category;
+  
+  const text = `${expert.essence || ''} ${expert.role || ''} ${expert.expertiseMap?.deepMastery?.join(' ') || ''}`.toLowerCase();
+  
+  if (text.includes('marketing') || text.includes('brand') || text.includes('content') || text.includes('social media') || text.includes('viral') || text.includes('narrative')) return 'marketing';
+  if (text.includes('sales') || text.includes('revenue') || text.includes('closing') || text.includes('deals')) return 'sales';
+  if (text.includes('engineer') || text.includes('developer') || text.includes('coding') || text.includes('software') || text.includes('technical')) return 'engineering';
+  if (text.includes('product') || text.includes('ux') || text.includes('user experience')) return 'product';
+  if (text.includes('finance') || text.includes('accounting') || text.includes('investment') || text.includes('capital')) return 'finance';
+  if (text.includes('operation') || text.includes('logistics') || text.includes('supply chain') || text.includes('process')) return 'operations';
+  if (text.includes('hr') || text.includes('human resource') || text.includes('talent') || text.includes('recruit') || text.includes('people')) return 'hr';
+  if (text.includes('legal') || text.includes('compliance') || text.includes('contract') || text.includes('law')) return 'legal';
+  if (text.includes('consult') || text.includes('advisor') || text.includes('strategic')) return 'consulting';
+  if (text.includes('strategy') || text.includes('growth') || text.includes('vision') || text.includes('business development')) return 'strategy';
+  if (text.includes('design') || text.includes('creative') || text.includes('visual') || text.includes('aesthetic')) return 'design';
+  if (text.includes('data') || text.includes('analytics') || text.includes('intelligence') || text.includes('insight')) return 'data';
+  if (text.includes('leader') || text.includes('ceo') || text.includes('executive') || text.includes('founder') || text.includes('director')) return 'leadership';
+  
+  return 'consulting'; // Default to consulting for advisors
+};
+
+// Category color mapping
+const CATEGORY_COLORS: Record<ExpertCategory, { bg: string; text: string; border: string }> = {
+  marketing: { bg: 'bg-pink-500/20', text: 'text-pink-400', border: 'border-pink-500/30' },
+  sales: { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
+  engineering: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  product: { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/30' },
+  finance: { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  operations: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
+  hr: { bg: 'bg-rose-500/20', text: 'text-rose-400', border: 'border-rose-500/30' },
+  legal: { bg: 'bg-slate-500/20', text: 'text-slate-400', border: 'border-slate-500/30' },
+  consulting: { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/30' },
+  strategy: { bg: 'bg-indigo-500/20', text: 'text-indigo-400', border: 'border-indigo-500/30' },
+  design: { bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400', border: 'border-fuchsia-500/30' },
+  data: { bg: 'bg-teal-500/20', text: 'text-teal-400', border: 'border-teal-500/30' },
+  leadership: { bg: 'bg-amber-500/20', text: 'text-amber-400', border: 'border-amber-500/30' },
+  general: { bg: 'bg-gray-500/20', text: 'text-gray-400', border: 'border-gray-500/30' },
+};
 
 interface Message {
   id: string;
@@ -26,6 +67,8 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState<string[]>([]); // Array of advisor names currently typing
+  const [hoveredExpert, setHoveredExpert] = useState<ExpertPersona | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -132,22 +175,44 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
           <span className="text-[10px] text-cyan-500 font-mono">{experts.length} Online</span>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {experts.map(exp => (
-            <button
-              key={exp.id}
-              onClick={() => addMention(exp.name)}
-              className="w-full p-3 rounded-xl flex items-center gap-3 hover:bg-slate-800/50 transition-all group text-left"
-            >
-              <div className={`relative shrink-0 w-10 h-10 rounded-full border-2 ${exp.isLegend ? 'border-amber-500/50' : 'border-cyan-500/30'} overflow-hidden`}>
-                <img src={exp.avatarUrl} alt="" className="w-full h-full object-cover" />
-                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-[#020617] rounded-full"></div>
+          {experts.map(exp => {
+            const category = inferCategory(exp);
+            const colors = CATEGORY_COLORS[category];
+            return (
+              <div
+                key={exp.id}
+                onMouseEnter={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setTooltipPos({ x: rect.right + 8, y: rect.top });
+                  setHoveredExpert(exp);
+                }}
+                onMouseLeave={() => setHoveredExpert(null)}
+              >
+                <button
+                  onClick={() => addMention(exp.name)}
+                  className="w-full p-3 rounded-xl flex items-center gap-3 hover:bg-slate-800/50 transition-all text-left"
+                >
+                  <div className={`relative shrink-0 w-10 h-10 rounded-full border-2 ${exp.isLegend ? 'border-amber-500/50' : 'border-cyan-500/30'} overflow-hidden`}>
+                    <img src={exp.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-[#020617] rounded-full"></div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-bold truncate ${exp.isLegend ? 'text-amber-400' : 'text-white'}`}>{exp.name}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${colors.bg} ${colors.text}`}>
+                        {category}
+                      </span>
+                      {exp.isLegend && (
+                        <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-amber-500/20 text-amber-400">
+                          Legend
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className={`text-xs font-bold truncate ${exp.isLegend ? 'text-amber-400' : 'text-white'}`}>{exp.name}</p>
-                <p className="text-[9px] text-slate-500 uppercase tracking-tighter truncate">{exp.role || 'Advisor'}</p>
-              </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
         <div className="p-4 border-t border-slate-800">
            <button onClick={onBrowseLegends} className="w-full py-2 text-[10px] font-mono uppercase tracking-widest text-slate-500 hover:text-cyan-400 transition-colors">
@@ -248,6 +313,36 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
           </div>
         </div>
       </main>
+
+      {/* Fixed position tooltip - appears on top of everything */}
+      {hoveredExpert && (
+        <div 
+          className="fixed w-72 p-4 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[9999] pointer-events-none"
+          style={{ 
+            left: Math.min(tooltipPos.x, window.innerWidth - 300),
+            top: Math.min(tooltipPos.y, window.innerHeight - 200)
+          }}
+        >
+          <p className="text-white font-bold text-sm">{hoveredExpert.name}</p>
+          <p className="text-cyan-400 text-xs mb-3">{hoveredExpert.essence}</p>
+          {hoveredExpert.expertiseMap?.deepMastery && hoveredExpert.expertiseMap.deepMastery.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider mb-1.5">Deep Mastery</p>
+              <div className="flex flex-wrap gap-1">
+                {hoveredExpert.expertiseMap.deepMastery.slice(0, 4).map((skill, i) => (
+                  <span key={i} className="px-2 py-1 bg-cyan-500/10 text-cyan-400 text-[10px] rounded">{skill}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {hoveredExpert.coreBeliefs && hoveredExpert.coreBeliefs.length > 0 && (
+            <div>
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider mb-1.5">Core Belief</p>
+              <p className="text-slate-300 text-[11px] italic leading-relaxed">"{hoveredExpert.coreBeliefs[0]}"</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

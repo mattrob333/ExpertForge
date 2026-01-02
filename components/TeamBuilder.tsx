@@ -343,6 +343,9 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       const customAgent = await generateCustomAgentForRole(roleName, context, sources);
       console.log('Custom agent generated:', customAgent);
       
+      // Add teamId to associate this agent with this specific team
+      customAgent.teamId = teamId;
+      
       // Save the custom agent to the experts list
       if (onExpertCreated) {
         onExpertCreated(customAgent);
@@ -845,29 +848,32 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
                       </div>
                     ) : (
                       <div className="border border-dashed border-slate-700 rounded-xl p-4 space-y-3">
-                        {/* Existing experts to assign */}
-                        {experts.length > 0 && (
-                          <div className="max-h-32 overflow-y-auto space-y-2">
-                            <p className="text-slate-500 text-[10px] uppercase tracking-wider">Select Existing Agent</p>
-                            {experts.map((expert) => (
-                              <button
-                                key={expert.id}
-                                onClick={() => handleAssignExpert(expert)}
-                                className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-cyan-500/10 border border-transparent hover:border-cyan-500/30 transition-all text-left"
-                              >
-                                <img 
-                                  src={expert.avatarUrl}
-                                  alt={expert.name}
-                                  className="w-8 h-8 rounded-lg object-cover"
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-white text-xs font-medium truncate">{expert.name}</p>
-                                  <p className="text-slate-500 text-[10px] truncate">{expert.essence}</p>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        {/* Existing experts to assign - filtered by team */}
+                        {(() => {
+                          const teamExperts = experts.filter(e => !e.teamId || e.teamId === teamId);
+                          return teamExperts.length > 0 && (
+                            <div className="max-h-32 overflow-y-auto space-y-2">
+                              <p className="text-slate-500 text-[10px] uppercase tracking-wider">Select Existing Agent</p>
+                              {teamExperts.map((expert) => (
+                                <button
+                                  key={expert.id}
+                                  onClick={() => handleAssignExpert(expert)}
+                                  className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-cyan-500/10 border border-transparent hover:border-cyan-500/30 transition-all text-left"
+                                >
+                                  <img 
+                                    src={expert.avatarUrl}
+                                    alt={expert.name}
+                                    className="w-8 h-8 rounded-lg object-cover"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white text-xs font-medium truncate">{expert.name}</p>
+                                    <p className="text-slate-500 text-[10px] truncate">{expert.essence}</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         
                         <div className="flex items-center gap-2 text-slate-600 text-[10px]">
                           <div className="flex-1 h-px bg-slate-700"></div>

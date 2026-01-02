@@ -15,7 +15,7 @@ import LegendProfile from './components/LegendProfile';
 import { ExpertPersona, AppState, PersonalityDirection, TeamContext, TeamStructure, Legend } from './types';
 import { generateExpertPersona, generateTeamStructure } from './services/geminiService';
 import { supabase, signOut, onAuthStateChange } from './lib/supabase';
-import { getExperts, saveExpert, getTeamContext, saveTeamContext, getTeamStructure, saveTeamStructure, clearLocalStorage, getAllTeams, deleteTeam, TeamContextWithId } from './services/storageService';
+import { getExperts, saveExpert, deleteExpert, getTeamContext, saveTeamContext, getTeamStructure, saveTeamStructure, clearLocalStorage, getAllTeams, deleteTeam, TeamContextWithId } from './services/storageService';
 import type { User } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
@@ -336,6 +336,15 @@ const App: React.FC = () => {
               teams={allTeams}
               onSummon={handleGenerate} 
               onSelectExpert={selectExpert}
+              onDeleteExpert={async (expertId: string) => {
+                try {
+                  await deleteExpert(expertId, user?.id);
+                  setExperts(prev => prev.filter(e => e.id !== expertId));
+                } catch (err) {
+                  console.error('Failed to delete expert:', err);
+                  setError('Failed to delete expert');
+                }
+              }}
               onCreateTeam={goTeamSetup}
               onGoLegends={goLegends}
               onSelectTeam={async (team: TeamContextWithId) => {

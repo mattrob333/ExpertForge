@@ -9,6 +9,7 @@ interface HomeDashboardProps {
   teams?: TeamContextWithId[];
   onSummon: (description: string, direction?: PersonalityDirection) => void;
   onSelectExpert: (expert: ExpertPersona) => void;
+  onDeleteExpert?: (expertId: string) => void;
   onCreateTeam?: () => void;
   onSelectTeam?: (team: TeamContextWithId) => void;
   onDeleteTeam?: (teamId: string) => void;
@@ -22,6 +23,7 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
   teams = [],
   onSummon, 
   onSelectExpert,
+  onDeleteExpert,
   onCreateTeam,
   onSelectTeam,
   onDeleteTeam,
@@ -63,21 +65,49 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {experts.map((expert) => (
-              <button
+              <div
                 key={expert.id}
-                onClick={() => onSelectExpert(expert)}
-                className="group relative flex items-center gap-4 bg-[#0f172a] border border-slate-800 p-6 rounded-2xl text-left hover:border-cyan-500/50 hover:bg-slate-900 transition-all transform hover:-translate-y-1"
+                className="group relative bg-[#0f172a] border border-slate-800 p-6 rounded-2xl hover:border-cyan-500/50 hover:bg-slate-900 transition-all transform hover:-translate-y-1"
               >
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <div className="w-16 h-16 shrink-0 rounded-xl overflow-hidden border border-slate-700 bg-slate-900">
-                  <img src={expert.avatarUrl} alt={expert.name} className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-white font-bold truncate group-hover:text-cyan-400 transition-colors">{expert.name}</h3>
-                  <p className="text-slate-500 text-xs truncate uppercase font-mono tracking-tighter">{expert.essence}</p>
-                </div>
-                <span className="text-slate-700 group-hover:text-cyan-500 transition-colors">›</span>
-              </button>
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-2xl"></div>
+                
+                {/* Delete button */}
+                {onDeleteExpert && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete ${expert.name}? This cannot be undone.`)) {
+                        onDeleteExpert(expert.id);
+                      }
+                    }}
+                    className="absolute top-3 right-3 w-7 h-7 rounded-lg bg-slate-800/50 border border-slate-700 flex items-center justify-center text-slate-500 hover:text-red-400 hover:border-red-500/50 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all z-10"
+                    title="Delete expert"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                )}
+                
+                <button
+                  onClick={() => onSelectExpert(expert)}
+                  className="w-full flex items-center gap-4 text-left"
+                >
+                  <div className="w-16 h-16 shrink-0 rounded-xl overflow-hidden border border-slate-700 bg-slate-900">
+                    <img src={expert.avatarUrl} alt={expert.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white font-bold truncate group-hover:text-cyan-400 transition-colors">{expert.name}</h3>
+                    <p className="text-slate-500 text-xs truncate uppercase font-mono tracking-tighter">{expert.essence}</p>
+                    {expert.category && (
+                      <span className="inline-block mt-1 px-2 py-0.5 bg-cyan-500/10 text-cyan-400 text-[9px] rounded uppercase font-bold">
+                        {expert.category}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-slate-700 group-hover:text-cyan-500 transition-colors">›</span>
+                </button>
+              </div>
             ))}
           </div>
         )}

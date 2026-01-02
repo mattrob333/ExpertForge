@@ -27,6 +27,22 @@ export interface Source {
   content: string;
 }
 
+export type ExpertCategory = 
+  | 'marketing'
+  | 'sales'
+  | 'engineering'
+  | 'product'
+  | 'finance'
+  | 'operations'
+  | 'hr'
+  | 'legal'
+  | 'consulting'
+  | 'strategy'
+  | 'design'
+  | 'data'
+  | 'leadership'
+  | 'general';
+
 export interface ExpertPersona {
   id: string;
   name: string;
@@ -34,6 +50,8 @@ export interface ExpertPersona {
   avatarUrl?: string;
   introduction: string;
   role?: string; // e.g., 'Strategy', 'Product', etc.
+  category?: ExpertCategory; // Department/expertise category
+  teamId?: string; // Associated team (null = available to all teams)
   isLegend?: boolean;
   stats: {
     coreSkills: number;

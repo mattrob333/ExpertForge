@@ -34,6 +34,8 @@ const personaToDbFormat = (persona: ExpertPersona, userId: string) => ({
   thinking: persona.thinking,
   personality: persona.personality,
   sidebar: persona.sidebar,
+  team_id: persona.teamId || null,
+  category: persona.category || null,
 });
 
 // Convert database format to ExpertPersona
@@ -52,6 +54,8 @@ const dbToPersonaFormat = (row: any): ExpertPersona => ({
   thinking: row.thinking,
   personality: row.personality,
   sidebar: row.sidebar,
+  teamId: row.team_id,
+  category: row.category,
 });
 
 // EXPERTS

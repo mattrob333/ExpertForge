@@ -1,18 +1,23 @@
 
 import React, { useState, useEffect } from 'react';
 import { ExpertPersona, ExpertResource, ResourceRecommendations } from '../types';
-import { getExpertResources, saveExpertResource, deleteExpertResource } from '../services/storageService';
+import { getExpertResources, saveExpertResource, deleteExpertResource, TeamContextWithId } from '../services/storageService';
 import { generateResourceRecommendations, autoPopulateAllResources } from '../services/geminiService';
 
 interface ExpertCardProps {
   persona: ExpertPersona;
   onRestart: () => void;
   onOpenTraining: () => void;
+  teams?: TeamContextWithId[];
 }
 
-const ExpertCard: React.FC<ExpertCardProps> = ({ persona, onRestart, onOpenTraining }) => {
+const ExpertCard: React.FC<ExpertCardProps> = ({ persona, onRestart, onOpenTraining, teams = [] }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'expertise' | 'thinking' | 'personality'>('overview');
   const [visible, setVisible] = useState(false);
+  const [resourcesExpanded, setResourcesExpanded] = useState(false);
+  
+  // Find the team this expert belongs to
+  const assignedTeam = persona.teamId ? teams.find(t => t.id === persona.teamId) : null;
   
   // Resources state
   const [resources, setResources] = useState<ExpertResource[]>([]);
@@ -170,7 +175,20 @@ const ExpertCard: React.FC<ExpertCardProps> = ({ persona, onRestart, onOpenTrain
       <div className="bg-[#0f172a]/90 backdrop-blur-xl border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
         
         {/* HEADER SECTION */}
-        <div className="p-8 md:p-12 border-b border-slate-800/50">
+        <div className="p-8 md:p-12 border-b border-slate-800/50 relative">
+          {/* Hired At Badge - Top Right */}
+          {assignedTeam && (
+            <div className="absolute top-6 right-6 md:top-8 md:right-8">
+              <div className="px-4 py-2 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-2">
+                <span className="text-emerald-400 text-sm">🏢</span>
+                <div className="text-right">
+                  <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Hired at</p>
+                  <p className="text-emerald-400 font-bold text-sm">{assignedTeam.name}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div className="flex flex-col md:flex-row gap-8 items-start">
             {/* Avatar */}
             <div className="relative shrink-0 mx-auto md:mx-0">
@@ -441,11 +459,89 @@ const ExpertCard: React.FC<ExpertCardProps> = ({ persona, onRestart, onOpenTrain
 
             <div className="space-y-4">
               <button 
-                onClick={handleAskForResources}
+                onClick={() => {
+                  setResourcesExpanded(!resourcesExpanded);
+                  if (!resourcesExpanded && !recommendations && resources.length === 0) {
+                    handleAskForResources();
+                  }
+                }}
                 className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20 transform hover:scale-[1.02] transition-all text-sm"
               >
-                <span>📋</span> What Resources Do You Need?
+                <span>📋</span> What Resources I Use
+                <svg className={`w-4 h-4 transition-transform ${resourcesExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
+              
+              {/* Expandable Resources Section */}
+              {resourcesExpanded && (
+                <div className="bg-slate-900/50 border border-slate-700 rounded-xl p-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  {loadingRecommendations ? (
+                    <div className="text-center py-8">
+                      <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                      <p className="text-slate-400 text-sm">Analyzing what resources I need...</p>
+                    </div>
+                  ) : recommendations ? (
+                    <div className="space-y-4">
+                      <p className="text-slate-300 text-sm italic border-l-2 border-purple-500 pl-3">
+                        "{recommendations.introduction}"
+                      </p>
+                      <div className="space-y-2">
+                        {recommendations.resources.map((rec, i) => (
+                          <div key={i} className="flex items-start gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                            <span className="text-lg">{getCategoryIcon(rec.category)}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white font-medium text-sm">{rec.title}</p>
+                              <p className="text-slate-400 text-xs mt-0.5">{rec.description}</p>
+                              <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${getPriorityColor(rec.priority)}`}>
+                                {rec.priority}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {!autoPopulating && recommendations.resources.length > 0 && (
+                        <button
+                          onClick={handleAutoPopulate}
+                          className="w-full py-2 bg-emerald-500/20 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs font-bold hover:bg-emerald-500/30 transition-all"
+                        >
+                          ⚡ Auto-Populate All Resources
+                        </button>
+                      )}
+                      {autoPopulating && (
+                        <div className="text-center py-2">
+                          <p className="text-emerald-400 text-xs">
+                            Populating {populateProgress.current}/{populateProgress.total}: {populateProgress.item}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : resources.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-slate-500 text-[10px] font-mono uppercase tracking-wider">My Resources</p>
+                      {resources.map((resource) => (
+                        <div key={resource.id} className="flex items-start gap-2 p-2 bg-slate-800/50 rounded-lg">
+                          <span className="text-sm">
+                            {resource.resourceType === 'url' ? '🔗' : 
+                             resource.resourceType === 'book' ? '📖' : 
+                             resource.resourceType === 'api' ? '⚡' : 
+                             resource.resourceType === 'tool' ? '🛠️' : '📄'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-sm font-medium">{resource.title}</p>
+                            {resource.description && (
+                              <p className="text-slate-400 text-xs">{resource.description}</p>
+                            )}
+                          </div>
+                          {resource.content && <span className="text-emerald-500 text-xs">✓</span>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 text-sm text-center py-4">No resources configured yet.</p>
+                  )}
+                </div>
+              )}
               <button 
                 onClick={onOpenTraining}
                 className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-cyan-900/20 transform hover:scale-[1.02] transition-all"

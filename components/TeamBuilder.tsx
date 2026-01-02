@@ -15,7 +15,7 @@ import ReactFlow, {
 } from 'reactflow';
 // CRITICAL: Import React Flow CSS for zoom/pan/drag to work
 import 'reactflow/dist/style.css';
-import { TeamStructure, TeamContext, ExpertPersona, TeamSource, Legend } from '../types';
+import { TeamStructure, TeamContext, ExpertPersona, TeamSource, Legend, ExpertCategory } from '../types';
 import { getLayoutedElements, inferNodeLevel } from '../lib/layoutOrgChart';
 import { getTeamSources, saveTeamSource, deleteTeamSource, getRoleAssignments, saveRoleAssignments, RoleAssignment } from '../services/storageService';
 import { scrapeUrlContent, generateCustomAgentForRole } from '../services/geminiService';
@@ -30,8 +30,46 @@ interface TeamBuilderProps {
   onSave: () => void;
   onBack: () => void;
   onGoHome: () => void;
-  onExpertCreated?: (expert: ExpertPersona) => void;
+  onExpertCreated?: (expert: ExpertPersona) => Promise<ExpertPersona> | void;
+  onSelectExpert?: (expert: ExpertPersona) => void;
 }
+
+// Category inference and colors (same as TeamChat)
+const inferCategory = (expert: ExpertPersona): ExpertCategory => {
+  if (expert.category) return expert.category;
+  const text = `${expert.essence || ''} ${expert.role || ''} ${expert.expertiseMap?.deepMastery?.join(' ') || ''}`.toLowerCase();
+  if (text.includes('marketing') || text.includes('brand') || text.includes('content')) return 'marketing';
+  if (text.includes('sales') || text.includes('revenue') || text.includes('account')) return 'sales';
+  if (text.includes('engineer') || text.includes('developer') || text.includes('technical')) return 'engineering';
+  if (text.includes('product') || text.includes('ux')) return 'product';
+  if (text.includes('finance') || text.includes('accounting') || text.includes('budget')) return 'finance';
+  if (text.includes('operation') || text.includes('logistics') || text.includes('process')) return 'operations';
+  if (text.includes('hr') || text.includes('talent') || text.includes('recruit')) return 'hr';
+  if (text.includes('legal') || text.includes('compliance') || text.includes('contract')) return 'legal';
+  if (text.includes('consult') || text.includes('advisor') || text.includes('strategic')) return 'consulting';
+  if (text.includes('strategy') || text.includes('growth') || text.includes('vision')) return 'strategy';
+  if (text.includes('design') || text.includes('creative') || text.includes('visual')) return 'design';
+  if (text.includes('data') || text.includes('analytics') || text.includes('insight')) return 'data';
+  if (text.includes('leader') || text.includes('ceo') || text.includes('executive') || text.includes('director')) return 'leadership';
+  return 'consulting';
+};
+
+const CATEGORY_COLORS: Record<ExpertCategory, { bg: string; text: string }> = {
+  marketing: { bg: 'bg-pink-500/20', text: 'text-pink-400' },
+  sales: { bg: 'bg-green-500/20', text: 'text-green-400' },
+  engineering: { bg: 'bg-blue-500/20', text: 'text-blue-400' },
+  product: { bg: 'bg-purple-500/20', text: 'text-purple-400' },
+  finance: { bg: 'bg-emerald-500/20', text: 'text-emerald-400' },
+  operations: { bg: 'bg-orange-500/20', text: 'text-orange-400' },
+  hr: { bg: 'bg-rose-500/20', text: 'text-rose-400' },
+  legal: { bg: 'bg-slate-500/20', text: 'text-slate-400' },
+  consulting: { bg: 'bg-cyan-500/20', text: 'text-cyan-400' },
+  strategy: { bg: 'bg-indigo-500/20', text: 'text-indigo-400' },
+  design: { bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400' },
+  data: { bg: 'bg-teal-500/20', text: 'text-teal-400' },
+  leadership: { bg: 'bg-amber-500/20', text: 'text-amber-400' },
+  general: { bg: 'bg-gray-500/20', text: 'text-gray-400' },
+};
 
 interface NodeAssignment {
   [nodeId: string]: {
@@ -174,6 +212,7 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   onBack,
   onGoHome,
   onExpertCreated,
+  onSelectExpert,
 }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -181,6 +220,10 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [roleModalTab, setRoleModalTab] = useState<RoleModalTab>('generate');
+  
+  // Hover tooltip state for expert bench
+  const [hoveredExpert, setHoveredExpert] = useState<ExpertPersona | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   
   // Human team member input state
   const [humanName, setHumanName] = useState('');
@@ -207,6 +250,37 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   const [roleChatInput, setRoleChatInput] = useState('');
   const [roleChatMessages, setRoleChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const [sendingRoleChat, setSendingRoleChat] = useState(false);
+  
+  // Bulk team generation state
+  const [generatingAllAgents, setGeneratingAllAgents] = useState(false);
+  const [bulkGenerationProgress, setBulkGenerationProgress] = useState<{
+    current: number;
+    total: number;
+    currentRole: string;
+    completed: Array<{ role: string; success: boolean; error?: string }>;
+  } | null>(null);
+  const [cancelBulkGeneration, setCancelBulkGeneration] = useState(false);
+  const cancelBulkGenerationRef = React.useRef(false);
+  const [showAgentSelector, setShowAgentSelector] = useState(false);
+
+  // Helper: Find direct subordinates (nodes that this node is the source of)
+  const getSubordinateNodes = useCallback((nodeId: string) => {
+    if (!structure?.edges || !structure?.nodes) return [];
+    // Find edges where this node is the source (parent)
+    const subordinateEdges = structure.edges.filter(e => e.source === nodeId);
+    const subordinateIds = subordinateEdges.map(e => e.target);
+    return structure.nodes.filter(n => subordinateIds.includes(n.id));
+  }, [structure]);
+
+  // Helper: Get subordinates with their assignments for chat context
+  const getSubordinatesWithAgents = useCallback((nodeId: string) => {
+    const subordinates = getSubordinateNodes(nodeId);
+    return subordinates.map(sub => ({
+      role: sub.role,
+      agent: assignments[sub.id]?.customAgent || assignments[sub.id]?.expert || null,
+      human: assignments[sub.id]?.human || null,
+    }));
+  }, [getSubordinateNodes, assignments]);
 
   // Load sources when teamId is available
   useEffect(() => {
@@ -368,6 +442,110 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
     }
   };
 
+  // Bulk generate all agents for the entire team
+  const handleGenerateAllAgents = async () => {
+    if (!context || sources.length === 0) {
+      alert('Please add at least one knowledge source before generating team agents.');
+      return;
+    }
+
+    // Get all nodes that don't have an assignment yet
+    const unassignedNodes = structure.nodes.filter(node => {
+      const assignment = assignments[node.id];
+      return !assignment?.customAgent && !assignment?.expert && !assignment?.legend;
+    });
+
+    if (unassignedNodes.length === 0) {
+      alert('All roles already have agents assigned!');
+      return;
+    }
+
+    // Reset cancellation flag
+    cancelBulkGenerationRef.current = false;
+    setCancelBulkGeneration(false);
+    setGeneratingAllAgents(true);
+    setBulkGenerationProgress({
+      current: 0,
+      total: unassignedNodes.length,
+      currentRole: '',
+      completed: [],
+    });
+
+    // Process each node sequentially with delays
+    for (let i = 0; i < unassignedNodes.length; i++) {
+      // Check for cancellation
+      if (cancelBulkGenerationRef.current) {
+        console.log('Bulk generation cancelled by user');
+        break;
+      }
+
+      const node = unassignedNodes[i];
+      const roleName = node.role;
+
+      // Update progress - starting this role
+      setBulkGenerationProgress(prev => prev ? {
+        ...prev,
+        current: i + 1,
+        currentRole: roleName,
+      } : null);
+
+      try {
+        console.log(`Generating agent ${i + 1}/${unassignedNodes.length}: ${roleName}`);
+        
+        // Generate the custom agent for this role
+        const customAgent = await generateCustomAgentForRole(roleName, context, sources);
+        customAgent.teamId = teamId;
+
+        // Save the custom agent and get back the saved version (with correct ID from database)
+        let savedAgent = customAgent;
+        if (onExpertCreated) {
+          // onExpertCreated returns the saved expert with the correct database ID
+          const result = await onExpertCreated(customAgent);
+          if (result) {
+            savedAgent = result;
+          }
+        }
+
+        // Assign to the node using the saved agent (with correct ID)
+        setAssignments(prev => ({
+          ...prev,
+          [node.id]: { expert: null, legend: null, human: null, customAgent: savedAgent },
+        }));
+
+        // Update progress - completed successfully
+        setBulkGenerationProgress(prev => prev ? {
+          ...prev,
+          completed: [...prev.completed, { role: roleName, success: true }],
+        } : null);
+
+        // Rate limit delay (1.5 seconds between calls)
+        if (i < unassignedNodes.length - 1 && !cancelBulkGenerationRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+
+      } catch (err: any) {
+        console.error(`Failed to generate agent for ${roleName}:`, err);
+        
+        // Update progress - failed
+        setBulkGenerationProgress(prev => prev ? {
+          ...prev,
+          completed: [...prev.completed, { role: roleName, success: false, error: err?.message || 'Unknown error' }],
+        } : null);
+
+        // Continue with next role after a brief delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    // Generation complete
+    setGeneratingAllAgents(false);
+  };
+
+  const handleCancelBulkGeneration = () => {
+    cancelBulkGenerationRef.current = true;
+    setCancelBulkGeneration(true);
+  };
+
   const handleSendRoleChat = async () => {
     if (!roleChatInput.trim() || !selectedNode) return;
     
@@ -390,12 +568,27 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
         m.role === 'user' ? `User: ${m.content}` : `${agent.name}: ${m.content}`
       ).join('\n');
       
+      // Build hierarchy context - direct reports
+      const subordinates = getSubordinatesWithAgents(selectedNode);
+      const hierarchyContext = subordinates.length > 0 
+        ? `\nYOUR DIRECT REPORTS:\n${subordinates.map(sub => {
+            if (sub.agent) {
+              return `- ${sub.role}: ${sub.agent.name} (${sub.agent.essence})`;
+            } else if (sub.human) {
+              return `- ${sub.role}: ${sub.human.name} (Human team member)`;
+            } else {
+              return `- ${sub.role}: (Position unfilled)`;
+            }
+          }).join('\n')}\n\nYou can delegate tasks to your direct reports or ask them for input on matters within their domain.`
+        : '';
+      
       const prompt = `You are ${agent.name}, ${agent.essence}.
 
 Your introduction: "${agent.introduction}"
 Your core beliefs: ${agent.coreBeliefs?.join(', ') || 'Excellence, innovation, results'}
 
 You are the ${structure.nodes.find(n => n.id === selectedNode)?.role} for ${context?.name || 'this organization'}.
+${hierarchyContext}
 
 ORGANIZATIONAL CONTEXT:
 ${sourcesContext || 'No additional context provided.'}
@@ -567,9 +760,10 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex pt-16">
+      <div className="flex pt-16 h-screen overflow-hidden">
         {/* Left Sidebar - Context & Rationale */}
-        <aside className="w-72 border-r border-slate-800 bg-slate-900/50 p-6 overflow-y-auto">
+        <aside className="w-72 border-r border-slate-800 bg-slate-900/50 flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-6">
           {context && (
             <div className="space-y-6">
               <div>
@@ -658,6 +852,7 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
               + Add Knowledge Source
             </button>
           </div>
+          </div>
         </aside>
 
         {/* Center - React Flow Canvas */}
@@ -716,7 +911,7 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
         </div>
 
         {/* Right Sidebar - Expert Bench */}
-        <aside className="w-80 border-l border-slate-800 bg-slate-900/50 flex flex-col">
+        <aside className="w-80 border-l border-slate-800 bg-slate-900/50 flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
           <div className="p-4 border-b border-slate-800">
             <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest">Your Expert Bench</h3>
             <p className="text-slate-600 text-[10px] mt-1">Drag or click nodes to assign</p>
@@ -738,9 +933,18 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
                 const isAssigned = Object.values(assignments).some(
                   (a) => a?.expert?.id === expert.id
                 );
+                const category = inferCategory(expert);
+                const colors = CATEGORY_COLORS[category];
                 return (
                   <div
                     key={expert.id}
+                    onClick={() => onSelectExpert?.(expert)}
+                    onMouseEnter={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setTooltipPos({ x: rect.left - 280, y: rect.top });
+                      setHoveredExpert(expert);
+                    }}
+                    onMouseLeave={() => setHoveredExpert(null)}
                     className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
                       isAssigned 
                         ? 'bg-slate-800/30 border-slate-700/50 opacity-50' 
@@ -755,6 +959,9 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm font-medium truncate">{expert.name}</p>
                       <p className="text-slate-500 text-[10px] truncate uppercase font-mono">{expert.essence}</p>
+                      <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${colors.bg} ${colors.text}`}>
+                        {category}
+                      </span>
                     </div>
                     {isAssigned && (
                       <span className="text-green-500 text-xs">✓</span>
@@ -765,7 +972,28 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
             )}
           </div>
           
-          <div className="p-4 border-t border-slate-800">
+          <div className="p-4 border-t border-slate-800 space-y-3">
+            {/* Generate All Agents Button */}
+            <button
+              onClick={handleGenerateAllAgents}
+              disabled={generatingAllAgents || sources.length === 0}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed rounded-xl text-white text-xs font-bold uppercase tracking-wider transition-all shadow-lg shadow-purple-900/30 disabled:shadow-none flex items-center justify-center gap-2"
+            >
+              {generatingAllAgents ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  ✨ Generate All Agents
+                </>
+              )}
+            </button>
+            {sources.length === 0 && (
+              <p className="text-amber-400 text-[10px] text-center">Add knowledge sources first</p>
+            )}
+            
             <button
               onClick={onGoHome}
               className="w-full py-3 border border-dashed border-slate-700 rounded-xl text-slate-500 text-xs font-mono uppercase tracking-wider hover:border-cyan-500/50 hover:text-cyan-400 transition-all"
@@ -819,7 +1047,7 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {/* Main Agent Card */}
+                  {/* Main Agent Card - Cleaner UI */}
                   <div>
                     <div className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest mb-2">Primary AI Agent</div>
                     {(assignments[selectedNode]?.customAgent || assignments[selectedNode]?.expert) ? (
@@ -839,58 +1067,95 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
                             </p>
                           </div>
                         </div>
-                        <button
-                          onClick={handleRemoveAssignment}
-                          className="mt-3 w-full py-2 text-red-400 text-xs border border-red-500/30 rounded-lg hover:bg-red-500/10 transition-all"
-                        >
-                          Remove Agent
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="border border-dashed border-slate-700 rounded-xl p-4 space-y-3">
-                        {/* Existing experts to assign - filtered by team */}
-                        {(() => {
-                          const teamExperts = experts.filter(e => !e.teamId || e.teamId === teamId);
-                          return teamExperts.length > 0 && (
-                            <div className="max-h-32 overflow-y-auto space-y-2">
-                              <p className="text-slate-500 text-[10px] uppercase tracking-wider">Select Existing Agent</p>
-                              {teamExperts.map((expert) => (
+                        {/* Action buttons */}
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => setShowAgentSelector(true)}
+                            className="flex-1 py-2 text-slate-400 text-xs border border-slate-600 rounded-lg hover:bg-slate-800 transition-all"
+                          >
+                            Change
+                          </button>
+                          <button
+                            onClick={handleGenerateCustomAgent}
+                            disabled={generatingAgent || sources.length === 0}
+                            className="flex-1 py-2 text-purple-400 text-xs border border-purple-500/30 rounded-lg hover:bg-purple-500/10 transition-all disabled:opacity-50"
+                          >
+                            {generatingAgent ? '...' : 'Regenerate'}
+                          </button>
+                        </div>
+                        
+                        {/* Expandable selector */}
+                        {showAgentSelector && (
+                          <div className="mt-3 border-t border-slate-700 pt-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-slate-500 text-[10px] uppercase tracking-wider">Select Different Agent</p>
+                              <button onClick={() => setShowAgentSelector(false)} className="text-slate-500 hover:text-white text-xs">✕</button>
+                            </div>
+                            <div className="max-h-28 overflow-y-auto space-y-1">
+                              {experts.filter(e => !e.teamId || e.teamId === teamId).map((expert) => (
                                 <button
                                   key={expert.id}
-                                  onClick={() => handleAssignExpert(expert)}
-                                  className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-cyan-500/10 border border-transparent hover:border-cyan-500/30 transition-all text-left"
+                                  onClick={() => { handleAssignExpert(expert); setShowAgentSelector(false); }}
+                                  className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-cyan-500/10 transition-all text-left"
                                 >
-                                  <img 
-                                    src={expert.avatarUrl}
-                                    alt={expert.name}
-                                    className="w-8 h-8 rounded-lg object-cover"
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-white text-xs font-medium truncate">{expert.name}</p>
-                                    <p className="text-slate-500 text-[10px] truncate">{expert.essence}</p>
-                                  </div>
+                                  <img src={expert.avatarUrl} alt={expert.name} className="w-6 h-6 rounded object-cover" />
+                                  <span className="text-white text-xs truncate">{expert.name}</span>
                                 </button>
                               ))}
                             </div>
-                          );
-                        })()}
-                        
-                        <div className="flex items-center gap-2 text-slate-600 text-[10px]">
-                          <div className="flex-1 h-px bg-slate-700"></div>
-                          <span>or</span>
-                          <div className="flex-1 h-px bg-slate-700"></div>
-                        </div>
-                        
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="border border-dashed border-slate-700 rounded-xl p-4 space-y-3">
+                        {/* Primary action: Generate */}
                         <button
                           onClick={handleGenerateCustomAgent}
                           disabled={generatingAgent || sources.length === 0}
-                          className="w-full py-2 bg-gradient-to-r from-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full py-3 bg-gradient-to-r from-purple-600 to-cyan-600 text-white text-xs font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {generatingAgent ? 'Generating...' : '✨ Generate New Agent'}
+                          {generatingAgent ? 'Generating...' : '✨ Generate Agent for Role'}
                         </button>
                         {sources.length === 0 && (
                           <p className="text-amber-400 text-[10px] text-center">Add sources first to generate</p>
                         )}
+                        
+                        {/* Secondary: Select existing */}
+                        {(() => {
+                          const teamExperts = experts.filter(e => !e.teamId || e.teamId === teamId);
+                          return teamExperts.length > 0 && (
+                            <>
+                              <div className="flex items-center gap-2 text-slate-600 text-[10px]">
+                                <div className="flex-1 h-px bg-slate-700"></div>
+                                <span>or select existing</span>
+                                <div className="flex-1 h-px bg-slate-700"></div>
+                              </div>
+                              <button
+                                onClick={() => setShowAgentSelector(!showAgentSelector)}
+                                className="w-full py-2 text-slate-400 text-xs border border-slate-700 rounded-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                              >
+                                Select Existing Agent
+                                <svg className={`w-3 h-3 transition-transform ${showAgentSelector ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                              {showAgentSelector && (
+                                <div className="max-h-28 overflow-y-auto space-y-1 border border-slate-700 rounded-lg p-2">
+                                  {teamExperts.map((expert) => (
+                                    <button
+                                      key={expert.id}
+                                      onClick={() => { handleAssignExpert(expert); setShowAgentSelector(false); }}
+                                      className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-cyan-500/10 transition-all text-left"
+                                >
+                                      <img src={expert.avatarUrl} alt={expert.name} className="w-6 h-6 rounded object-cover" />
+                                      <span className="text-white text-xs truncate">{expert.name}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -977,15 +1242,57 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
                     )}
                   </div>
 
-                  {/* Sub-agents Section */}
+                  {/* Sub-agents Section - Direct Reports from Org Hierarchy */}
                   <div>
-                    <div className="text-[10px] font-mono text-amber-400 uppercase tracking-widest mb-2">Sub-Agents</div>
-                    <div className="border border-dashed border-slate-700 rounded-xl p-4 text-center">
-                      <p className="text-slate-500 text-xs mb-2">Specialized assistants for this role</p>
-                      <button className="w-full py-2 border border-amber-500/30 text-amber-400 text-xs font-medium rounded-lg hover:bg-amber-500/10 transition-all">
-                        + Add Sub-Agent
-                      </button>
+                    <div className="text-[10px] font-mono text-amber-400 uppercase tracking-widest mb-2">
+                      Direct Reports ({getSubordinateNodes(selectedNode).length})
                     </div>
+                    {getSubordinateNodes(selectedNode).length > 0 ? (
+                      <div className="border border-amber-500/20 rounded-xl overflow-hidden">
+                        <div className="max-h-48 overflow-y-auto">
+                          {getSubordinateNodes(selectedNode).map((subNode) => {
+                            const subAssignment = assignments[subNode.id];
+                            const subAgent = subAssignment?.customAgent || subAssignment?.expert;
+                            const subHuman = subAssignment?.human;
+                            return (
+                              <div 
+                                key={subNode.id}
+                                className="flex items-center gap-3 p-3 border-b border-slate-800 last:border-b-0 hover:bg-amber-500/5 transition-all"
+                              >
+                                {subAgent ? (
+                                  <img 
+                                    src={subAgent.avatarUrl}
+                                    alt={subAgent.name}
+                                    className="w-8 h-8 rounded-lg object-cover border border-amber-500/30"
+                                  />
+                                ) : subHuman ? (
+                                  <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center text-green-400 text-sm">
+                                    👤
+                                  </div>
+                                ) : (
+                                  <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 text-sm">
+                                    ?
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-amber-400 text-[10px] font-mono uppercase truncate">{subNode.role}</p>
+                                  <p className="text-slate-300 text-xs truncate">
+                                    {subAgent?.name || subHuman?.name || 'Unfilled'}
+                                  </p>
+                                </div>
+                                {(subAgent || subHuman) && (
+                                  <span className="text-green-500 text-[10px]">✓</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border border-dashed border-slate-700 rounded-xl p-4 text-center">
+                        <p className="text-slate-500 text-xs">No direct reports for this role</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1336,6 +1643,162 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Bulk Generation Progress Modal */}
+      {generatingAllAgents && bulkGenerationProgress && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-800 bg-slate-900/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-cyan-600 flex items-center justify-center">
+                  <span className="text-xl">🚀</span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Generating Team Agents</h2>
+                  <p className="text-slate-500 text-xs font-mono">
+                    {bulkGenerationProgress.current}/{bulkGenerationProgress.total} roles • {cancelBulkGeneration ? 'Cancelling...' : 'Processing...'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="px-6 py-4 border-b border-slate-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-slate-400 text-sm">Progress</span>
+                <span className="text-cyan-400 text-sm font-bold">
+                  {Math.round((bulkGenerationProgress.completed.length / bulkGenerationProgress.total) * 100)}%
+                </span>
+              </div>
+              <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-purple-600 to-cyan-600 transition-all duration-500 ease-out"
+                  style={{ width: `${(bulkGenerationProgress.completed.length / bulkGenerationProgress.total) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Current Role */}
+            {bulkGenerationProgress.currentRole && (
+              <div className="px-6 py-3 bg-cyan-500/10 border-b border-slate-800 flex items-center gap-3">
+                <div className="w-5 h-5 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin"></div>
+                <span className="text-cyan-400 text-sm font-medium">
+                  Generating: {bulkGenerationProgress.currentRole}
+                </span>
+              </div>
+            )}
+
+            {/* Completed Roles List */}
+            <div className="max-h-64 overflow-y-auto p-4 space-y-2">
+              {bulkGenerationProgress.completed.map((item, i) => (
+                <div 
+                  key={i}
+                  className={`flex items-center gap-3 p-3 rounded-lg ${
+                    item.success ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'
+                  }`}
+                >
+                  <span className={`text-lg ${item.success ? 'text-green-500' : 'text-red-500'}`}>
+                    {item.success ? '✓' : '✕'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium truncate ${item.success ? 'text-green-400' : 'text-red-400'}`}>
+                      {item.role}
+                    </p>
+                    {item.error && (
+                      <p className="text-red-400/70 text-[10px] truncate">{item.error}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {/* Pending roles (not yet processed) */}
+              {structure.nodes
+                .filter(node => {
+                  const assignment = assignments[node.id];
+                  return !assignment?.customAgent && !assignment?.expert && !assignment?.legend;
+                })
+                .filter(node => !bulkGenerationProgress.completed.some(c => c.role === node.role))
+                .filter(node => node.role !== bulkGenerationProgress.currentRole)
+                .map((node, i) => (
+                  <div 
+                    key={`pending-${i}`}
+                    className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/30 border border-slate-700/30"
+                  >
+                    <span className="text-lg text-slate-600">○</span>
+                    <p className="text-slate-500 text-sm truncate">{node.role}</p>
+                  </div>
+                ))}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-800 flex gap-3">
+              <button
+                onClick={handleCancelBulkGeneration}
+                disabled={cancelBulkGeneration}
+                className="flex-1 py-3 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {cancelBulkGeneration ? 'Stopping...' : 'Cancel Generation'}
+              </button>
+            </div>
+
+            {/* Summary when complete */}
+            {bulkGenerationProgress.completed.length === bulkGenerationProgress.total && (
+              <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white font-bold">Generation Complete!</p>
+                    <p className="text-slate-400 text-xs">
+                      {bulkGenerationProgress.completed.filter(c => c.success).length} succeeded, {' '}
+                      {bulkGenerationProgress.completed.filter(c => !c.success).length} failed
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setGeneratingAllAgents(false);
+                      setBulkGenerationProgress(null);
+                    }}
+                    className="px-6 py-2 bg-gradient-to-r from-cyan-600 to-purple-600 text-white rounded-lg text-sm font-bold hover:from-cyan-500 hover:to-purple-500 transition-all"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Expert Hover Tooltip */}
+      {hoveredExpert && (
+        <div 
+          className="fixed w-72 p-4 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[9999] pointer-events-none"
+          style={{ 
+            left: Math.max(8, tooltipPos.x),
+            top: Math.min(tooltipPos.y, window.innerHeight - 220)
+          }}
+        >
+          <p className="text-white font-bold text-sm">{hoveredExpert.name}</p>
+          <p className="text-cyan-400 text-xs mb-3">{hoveredExpert.essence}</p>
+          {hoveredExpert.expertiseMap?.deepMastery && hoveredExpert.expertiseMap.deepMastery.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider mb-1.5">Deep Mastery</p>
+              <div className="flex flex-wrap gap-1">
+                {hoveredExpert.expertiseMap.deepMastery.slice(0, 4).map((skill, i) => (
+                  <span key={i} className="px-2 py-1 bg-cyan-500/10 text-cyan-400 text-[10px] rounded">{skill}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {hoveredExpert.coreBeliefs && hoveredExpert.coreBeliefs.length > 0 && (
+            <div>
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider mb-1.5">Core Belief</p>
+              <p className="text-slate-300 text-[11px] italic leading-relaxed">"{hoveredExpert.coreBeliefs[0]}"</p>
+            </div>
+          )}
+          <p className="text-[9px] text-cyan-500 mt-3 uppercase tracking-wider">Click to view profile</p>
         </div>
       )}
     </div>

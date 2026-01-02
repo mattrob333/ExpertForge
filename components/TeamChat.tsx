@@ -69,7 +69,60 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
   const [isTyping, setIsTyping] = useState<string[]>([]); // Array of advisor names currently typing
   const [hoveredExpert, setHoveredExpert] = useState<ExpertPersona | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [showMentionDrawer, setShowMentionDrawer] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sort experts: Legends first, then others
+  const sortedExperts = [...experts].sort((a, b) => {
+    if (a.isLegend && !b.isLegend) return -1;
+    if (!a.isLegend && b.isLegend) return 1;
+    return 0;
+  });
+
+  // Separate legends and regular experts for sidebar
+  const legends = sortedExperts.filter(e => e.isLegend);
+  const regularExperts = sortedExperts.filter(e => !e.isLegend);
+
+  // Filter experts for mention drawer
+  const filteredExperts = sortedExperts.filter(exp =>
+    exp.name.toLowerCase().includes(mentionFilter.toLowerCase())
+  );
+
+  // Handle @ detection in input
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setInputValue(value);
+    
+    // Check if user just typed @ or is typing after @
+    const lastAtIndex = value.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const textAfterAt = value.substring(lastAtIndex + 1);
+      // Show drawer if @ is at end or followed by text without space
+      if (!textAfterAt.includes(' ')) {
+        setShowMentionDrawer(true);
+        setMentionFilter(textAfterAt);
+      } else {
+        setShowMentionDrawer(false);
+        setMentionFilter('');
+      }
+    } else {
+      setShowMentionDrawer(false);
+      setMentionFilter('');
+    }
+  };
+
+  // Handle mention selection from drawer
+  const selectMention = (expert: ExpertPersona) => {
+    const lastAtIndex = inputValue.lastIndexOf('@');
+    const beforeAt = inputValue.substring(0, lastAtIndex);
+    const newValue = `${beforeAt}@${expert.name.split(' ')[0]} `;
+    setInputValue(newValue);
+    setShowMentionDrawer(false);
+    setMentionFilter('');
+    inputRef.current?.focus();
+  };
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -170,54 +223,115 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
     <div className="flex-1 flex overflow-hidden w-full h-full bg-[#020617]">
       {/* Sidebar: Advisors List */}
       <aside className="w-72 border-r border-slate-800 bg-[#0f172a]/20 flex flex-col shrink-0">
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <h3 className="text-[10px] font-mono text-slate-500 uppercase tracking-widest font-bold">Active Board</h3>
           <span className="text-[10px] text-cyan-500 font-mono">{experts.length} Online</span>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {experts.map(exp => {
-            const category = inferCategory(exp);
-            const colors = CATEGORY_COLORS[category];
-            return (
-              <div
-                key={exp.id}
-                onMouseEnter={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setTooltipPos({ x: rect.right + 8, y: rect.top });
-                  setHoveredExpert(exp);
-                }}
-                onMouseLeave={() => setHoveredExpert(null)}
-              >
-                <button
-                  onClick={() => addMention(exp.name)}
-                  className="w-full p-3 rounded-xl flex items-center gap-3 hover:bg-slate-800/50 transition-all text-left"
-                >
-                  <div className={`relative shrink-0 w-10 h-10 rounded-full border-2 ${exp.isLegend ? 'border-amber-500/50' : 'border-cyan-500/30'} overflow-hidden`}>
-                    <img src={exp.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-[#020617] rounded-full"></div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-bold truncate ${exp.isLegend ? 'text-amber-400' : 'text-white'}`}>{exp.name}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${colors.bg} ${colors.text}`}>
-                        {category}
-                      </span>
-                      {exp.isLegend && (
-                        <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-amber-500/20 text-amber-400">
-                          Legend
+        
+        {/* Legends Section - Always at Top */}
+        {legends.length > 0 && (
+          <div className="border-b border-amber-500/20">
+            <div className="px-4 py-2 bg-gradient-to-r from-amber-500/10 to-transparent">
+              <span className="text-[9px] font-mono text-amber-500 uppercase tracking-widest font-bold">🏆 Legends</span>
+            </div>
+            <div className="p-2 space-y-1">
+              {legends.map(exp => {
+                const category = inferCategory(exp);
+                const colors = CATEGORY_COLORS[category];
+                return (
+                  <div
+                    key={exp.id}
+                    onMouseEnter={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setTooltipPos({ x: rect.right + 8, y: rect.top });
+                      setHoveredExpert(exp);
+                    }}
+                    onMouseLeave={() => setHoveredExpert(null)}
+                  >
+                    <button
+                      onClick={() => addMention(exp.name)}
+                      className="w-full p-2.5 rounded-lg flex items-center gap-3 hover:bg-amber-500/10 transition-all text-left border border-transparent hover:border-amber-500/30"
+                    >
+                      <div className="relative shrink-0 w-9 h-9 rounded-full border-2 border-amber-500/50 overflow-hidden shadow-[0_0_8px_rgba(245,158,11,0.2)]">
+                        <img src={exp.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 border border-[#020617] rounded-full"></div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold truncate text-amber-400">{exp.name}</p>
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${colors.bg} ${colors.text}`}>
+                          {category}
                         </span>
-                      )}
-                    </div>
+                      </div>
+                    </button>
                   </div>
-                </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Regular Experts Section */}
+        <div className="flex-1 overflow-y-auto">
+          {regularExperts.length > 0 && (
+            <>
+              <div className="px-4 py-2">
+                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest font-bold">Your Experts</span>
               </div>
-            );
-          })}
+              <div className="px-2 pb-2 space-y-1">
+                {regularExperts.map(exp => {
+                  const category = inferCategory(exp);
+                  const colors = CATEGORY_COLORS[category];
+                  return (
+                    <div
+                      key={exp.id}
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setTooltipPos({ x: rect.right + 8, y: rect.top });
+                        setHoveredExpert(exp);
+                      }}
+                      onMouseLeave={() => setHoveredExpert(null)}
+                    >
+                      <button
+                        onClick={() => addMention(exp.name)}
+                        className="w-full p-2.5 rounded-lg flex items-center gap-3 hover:bg-slate-800/50 transition-all text-left"
+                      >
+                        <div className="relative shrink-0 w-9 h-9 rounded-full border-2 border-cyan-500/30 overflow-hidden">
+                          <img src={exp.avatarUrl} alt="" className="w-full h-full object-cover" />
+                          <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 border border-[#020617] rounded-full"></div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold truncate text-white">{exp.name}</p>
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${colors.bg} ${colors.text}`}>
+                            {category}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
-        <div className="p-4 border-t border-slate-800">
-           <button onClick={onBrowseLegends} className="w-full py-2 text-[10px] font-mono uppercase tracking-widest text-slate-500 hover:text-cyan-400 transition-colors">
-             + Draft Advisor
-           </button>
+
+        {/* Add Sources Panel */}
+        <div className="border-t border-slate-800">
+          <div className="p-3">
+            <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest font-bold mb-2">📎 Add Sources</div>
+            <div className="space-y-2">
+              <button className="w-full p-2 rounded-lg border border-dashed border-slate-700 text-slate-500 text-[10px] font-mono hover:border-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/5 transition-all flex items-center justify-center gap-2">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Drop Files or URLs
+              </button>
+            </div>
+          </div>
+          <div className="p-3 pt-0">
+            <button onClick={onBrowseLegends} className="w-full py-2 text-[10px] font-mono uppercase tracking-widest text-slate-500 hover:text-cyan-400 transition-colors border border-slate-800 rounded-lg hover:border-cyan-500/50">
+              + Draft Advisor
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -280,26 +394,61 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
 
         {/* Input Area */}
         <div className="p-8 pt-0 relative z-10">
-          <div className="max-w-4xl mx-auto">
-            {/* Quick Mentions */}
-            <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar pb-1">
-              {experts.map(exp => (
-                <button 
-                  key={exp.id}
-                  onClick={() => addMention(exp.name)}
-                  className="px-3 py-1 bg-slate-900 border border-slate-800 rounded-full text-[10px] font-mono text-slate-400 hover:border-cyan-500 hover:text-cyan-400 transition-all whitespace-nowrap"
-                >
-                  @{exp.name.split(' ')[0]}
-                </button>
-              ))}
-            </div>
+          <div className="max-w-4xl mx-auto relative">
+            {/* @Mention Drawer - appears above input */}
+            {showMentionDrawer && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                <div className="p-3 border-b border-slate-800">
+                  <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Select an advisor to mention</p>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {filteredExperts.length === 0 ? (
+                    <div className="p-4 text-center text-slate-500 text-sm">No matching advisors</div>
+                  ) : (
+                    <div className="p-2 space-y-1">
+                      {filteredExperts.map(exp => {
+                        const category = inferCategory(exp);
+                        const colors = CATEGORY_COLORS[category];
+                        return (
+                          <button
+                            key={exp.id}
+                            onClick={() => selectMention(exp)}
+                            className="w-full p-3 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition-all text-left"
+                          >
+                            <div className={`relative shrink-0 w-10 h-10 rounded-full border-2 ${exp.isLegend ? 'border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'border-cyan-500/30'} overflow-hidden`}>
+                              <img src={exp.avatarUrl} alt="" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-bold truncate ${exp.isLegend ? 'text-amber-400' : 'text-white'}`}>
+                                {exp.name}
+                                {exp.isLegend && <span className="ml-1.5 text-[10px]">🏆</span>}
+                              </p>
+                              <p className="text-slate-500 text-xs truncate">{exp.essence}</p>
+                            </div>
+                            <span className={`px-2 py-1 rounded text-[9px] font-bold uppercase ${colors.bg} ${colors.text}`}>
+                              {category}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSendMessage} className="relative group">
               <div className="absolute inset-0 bg-cyan-500/10 blur-2xl opacity-0 group-focus-within:opacity-100 transition-opacity rounded-full"></div>
               <input
+                ref={inputRef}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="@mention advisors to ask them questions..."
+                onChange={handleInputChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowMentionDrawer(false);
+                  }
+                }}
+                placeholder="Type @ to mention advisors..."
                 className="w-full bg-[#0f172a] border border-slate-800 rounded-full py-4 px-8 text-white focus:outline-none focus:border-cyan-500 transition-all relative z-10"
               />
               <button 

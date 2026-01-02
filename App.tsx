@@ -304,7 +304,9 @@ const App: React.FC = () => {
               // Save the custom agent to storage and add to experts list
               const savedExpert = await saveExpert(expert, user?.id);
               setExperts(prev => [...prev, savedExpert]);
+              return savedExpert;
             }}
+            onSelectExpert={selectExpert}
           />
         )}
 
@@ -347,6 +349,7 @@ const App: React.FC = () => {
               }}
               onCreateTeam={goTeamSetup}
               onGoLegends={goLegends}
+              onSelectLegend={handleSelectLegend}
               onSelectTeam={async (team: TeamContextWithId) => {
                 // Try to load saved structure from database first
                 setTeamContext(team);
@@ -402,7 +405,8 @@ const App: React.FC = () => {
             <ExpertCard 
               persona={currentPersona} 
               onRestart={goDashboard} 
-              onOpenTraining={() => setState('training')} 
+              onOpenTraining={() => setState('training')}
+              teams={allTeams}
             />
           </div>
         )}

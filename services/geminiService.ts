@@ -223,14 +223,17 @@ ${PERSONA_META_PROMPT}
 Now create a detailed expert persona based on this description: "${description}"
 ${direction ? `Personality direction: ${direction} (infuse this energy throughout their character)` : ''}
 
-NAMING AND GENDER REQUIREMENTS (CRITICAL):
-- GENDER: Generate a MALE persona 70% of the time, female 30% of the time. Lean toward male.
-- NAMING: Use primarily American, British, Australian, or Western European names
-- Examples of good male names: "Marcus Chen", "David Hartley", "Ryan O'Connor", "James Mitchell", "Michael Torres", "Chris Anderson", "Tom Bradley"
-- Examples of good female names: "Sarah Mitchell", "Kate Reynolds", "Emily Chen", "Rachel Torres"
-- Avoid overly exotic or difficult-to-pronounce names
-- Do NOT reuse common last names like Vance, Vane, Stone, Gray, Sterling, Cross
-- The name should feel professional and relatable to a Western business audience
+UNIQUE NAME GENERATION (CRITICAL - READ CAREFULLY):
+- RANDOM SEED: ${Date.now()}-${Math.random().toString(36).substr(2, 8)}
+- You MUST generate a COMPLETELY UNIQUE name that has NEVER been used before
+- BANNED NAMES (DO NOT USE): James Hartley, David Hartley, James Mitchell, Julian Thorne, Marcus Thorne, Julian Beck, Julian Miller, Marcus Chen, Ryan O'Connor, Michael Torres, Chris Anderson, Tom Bradley, Sarah Mitchell, Kate Reynolds, Emily Chen, Rachel Torres, Zayan Mistry, Sloane Vance, Silas Vance, Elara Vane
+- GENDER: 70% male, 30% female
+- Pick ONE first name from this list (use the random seed to pick randomly):
+  MALE: Adrian, Blake, Callum, Declan, Elliott, Finn, Graham, Harrison, Ian, Jordan, Kieran, Liam, Malcolm, Nolan, Oliver, Preston, Quinn, Reid, Sebastian, Tristan, Victor, Wesley, Xavier, Zachary, Rowan, Bennett, Emmett, Griffin, Hayes, Jasper, Knox, Landon, Miles, Nash, Oscar, Phoenix, Rhett, Sawyer, Sterling, Theo, Warren, Brooks, Clark, Davis, Ellis, Ford, Grant, Heath, Irving, Jude
+  FEMALE: Audrey, Blair, Clara, Diana, Eleanor, Fiona, Georgia, Helena, Iris, Jade, Kira, Leah, Morgan, Naomi, Paige, Quinn, Rose, Sienna, Tessa, Uma, Violet, Willow, Zoe, Brynn, Cecilia, Darcy, Eden, Freya, Gemma, Hadley, Imogen, June, Lydia, Margot, Neve, Ophelia, Piper, Remi, Scarlett, Thea, Vera, Wren
+- Pick ONE last name from this list (use the random seed to pick randomly):
+  Callahan, Brennan, Whitmore, Ashford, Donovan, Mercer, Blackwell, Thornton, Gallagher, Hendricks, Carmichael, Whitaker, Pemberton, Fitzgerald, Holloway, Westbrook, Sinclair, Montgomery, Crawford, Ellison, Brantley, Kensington, Winslow, Prescott, Langford, Hawthorne, Aldridge, Beckett, Chandler, Davenport, Everett, Fletcher, Garrison, Harding, Jennings, Keller, Lawson, Morrison, Norwood, O'Brien, Palmer, Quincy, Reynolds, Sheffield, Thornberry, Underwood, Vaughn, Wellington, York
+- The combination must be UNIQUE - do not repeat patterns
 
 CATEGORY ASSIGNMENT (CRITICAL):
 Based on the expertise description, assign ONE category from: marketing, sales, engineering, product, finance, operations, hr, legal, consulting, strategy, design, data, leadership, general
@@ -615,14 +618,17 @@ Create a detailed expert persona that:
 4. Can speak authentically about the specific business context provided
 5. Would be a valuable advisor for someone in this exact role at this exact company
 
-NAMING AND GENDER REQUIREMENTS (CRITICAL):
-- GENDER: Generate a MALE persona 70% of the time, female 30% of the time. Lean toward male.
-- NAMING: Use primarily American, British, Australian, or Western European names
-- Examples of good male names: "Marcus Chen", "David Hartley", "Ryan O'Connor", "James Mitchell", "Michael Torres", "Chris Anderson", "Tom Bradley"
-- Examples of good female names: "Sarah Mitchell", "Kate Reynolds", "Emily Chen", "Rachel Torres"
-- Avoid overly exotic or difficult-to-pronounce names
-- Do NOT reuse common last names like Vance, Vane, Stone, Gray, Sterling, Cross
-- The name should feel professional and relatable to a Western business audience
+UNIQUE NAME GENERATION (CRITICAL - READ CAREFULLY):
+- RANDOM SEED: ${Date.now()}-${Math.random().toString(36).substr(2, 8)}
+- You MUST generate a COMPLETELY UNIQUE name that has NEVER been used before
+- BANNED NAMES (DO NOT USE): James Hartley, David Hartley, James Mitchell, Julian Thorne, Marcus Thorne, Julian Beck, Julian Miller, Marcus Chen, Ryan O'Connor, Michael Torres, Chris Anderson, Tom Bradley, Sarah Mitchell, Kate Reynolds, Emily Chen, Rachel Torres, Zayan Mistry, Sloane Vance, Silas Vance, Elara Vane
+- GENDER: 70% male, 30% female
+- Pick ONE first name from this list (use the random seed to pick randomly):
+  MALE: Adrian, Blake, Callum, Declan, Elliott, Finn, Graham, Harrison, Ian, Jordan, Kieran, Liam, Malcolm, Nolan, Oliver, Preston, Quinn, Reid, Sebastian, Tristan, Victor, Wesley, Xavier, Zachary, Rowan, Bennett, Emmett, Griffin, Hayes, Jasper, Knox, Landon, Miles, Nash, Oscar, Phoenix, Rhett, Sawyer, Sterling, Theo, Warren, Brooks, Clark, Davis, Ellis, Ford, Grant, Heath, Irving, Jude
+  FEMALE: Audrey, Blair, Clara, Diana, Eleanor, Fiona, Georgia, Helena, Iris, Jade, Kira, Leah, Morgan, Naomi, Paige, Quinn, Rose, Sienna, Tessa, Uma, Violet, Willow, Zoe, Brynn, Cecilia, Darcy, Eden, Freya, Gemma, Hadley, Imogen, June, Lydia, Margot, Neve, Ophelia, Piper, Remi, Scarlett, Thea, Vera, Wren
+- Pick ONE last name from this list (use the random seed to pick randomly):
+  Callahan, Brennan, Whitmore, Ashford, Donovan, Mercer, Blackwell, Thornton, Gallagher, Hendricks, Carmichael, Whitaker, Pemberton, Fitzgerald, Holloway, Westbrook, Sinclair, Montgomery, Crawford, Ellison, Brantley, Kensington, Winslow, Prescott, Langford, Hawthorne, Aldridge, Beckett, Chandler, Davenport, Everett, Fletcher, Garrison, Harding, Jennings, Keller, Lawson, Morrison, Norwood, O'Brien, Palmer, Quincy, Reynolds, Sheffield, Thornberry, Underwood, Vaughn, Wellington, York
+- The combination must be UNIQUE - do not repeat patterns
 
 CATEGORY ASSIGNMENT (CRITICAL):
 Based on the role "${roleName}", assign ONE category from: marketing, sales, engineering, product, finance, operations, hr, legal, consulting, strategy, design, data, leadership, general

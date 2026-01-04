@@ -1,7 +1,7 @@
 # ExpertForge Engineering Log
 
 **Project**: ExpertForge - AI Expert Persona & Advisory Team Builder  
-**Last Updated**: January 2, 2026  
+**Last Updated**: January 3, 2026  
 **Status**: Active Development (MVP Complete)
 
 ---
@@ -101,6 +101,57 @@ ExpertForge is an AI-powered platform that generates detailed expert personas an
 ---
 
 ## Recent Development Sessions
+
+### Session: January 2-3, 2026
+
+#### Features Implemented
+
+1. **Team Chat with Cascading Agent Responses**
+   - Full team chat view in center panel (toggle between Org Chart and Team Chat)
+   - CEO/top-level agent responds first to user messages
+   - Agents can @mention other team members, triggering cascading responses
+   - Up to 10 agent responses per conversation turn
+   - Streaming responses with real-time UI updates
+   - Google Search grounding for web research during responses
+
+2. **Team-Scoped Expert Bench**
+   - Agents now filtered by `teamId` in the Expert Bench sidebar
+   - Agents created for Team A don't appear in Team B's workspace
+   - Empty state shows "No agents for this team yet" when switching teams
+   - Cross-team context contamination prevention with verification checks
+
+3. **Server-Side Name Generation**
+   - Moved name generation from AI prompt to server-side `Math.random()`
+   - Prevents duplicate names within a session via `usedNames` Set
+   - Existing agent names passed to prevent collisions
+   - 70% male / 30% female ratio with natural English names
+
+4. **Thread Synthesis Feature**
+   - "Synthesize" button in chat header generates AI summary
+   - Summary includes: Executive Summary, Key Decisions, Action Items, Open Questions, Recommendations
+   - Auto-copies summary to clipboard
+   - Displays summary as a special message in chat
+
+5. **Improved Agent Response Quality**
+   - Reduced rigid structure in prompts for more natural responses
+   - Encouraged disagreement and productive tension between agents
+   - Goal-oriented prompting: "Big Picture → Specific Actions"
+   - Variable response lengths based on context
+
+6. **UI/UX Improvements**
+   - Sticky left/right sidebars with scrollable center chat
+   - Fixed chat header and input bar
+   - Agent roster pills clickable to add @mentions
+   - Markdown rendering in chat messages (bold, italic, code, links)
+   - Export thread button copies raw conversation to clipboard
+
+7. **Bug Fixes**
+   - Fixed @mention detection regex for partial names
+   - Fixed chat cascade stopping after 4 responses (increased to 10)
+   - Added context verification to prevent cross-team data contamination
+   - Added detailed logging for debugging team context issues
+
+---
 
 ### Session: January 1-2, 2026
 
@@ -239,6 +290,18 @@ VITE_STRIPE_PUBLISHABLE_KEY=<stripe_key>
 ---
 
 ## Changelog
+
+### v0.3.0 (January 3, 2026)
+- Added Team Chat with cascading agent responses and @mentions
+- Added team-scoped Expert Bench (agents filtered by team)
+- Added Thread Synthesis button for AI-powered summaries
+- Added server-side name generation to prevent duplicates
+- Improved agent response variety and conversational quality
+- Added markdown rendering in chat messages
+- Added export thread to clipboard feature
+- Fixed cross-team context contamination bug
+- Fixed @mention detection for partial names
+- Increased max cascade responses from 4 to 10
 
 ### v0.2.0 (January 2, 2026)
 - Added Role Workspace with full chat functionality

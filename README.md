@@ -24,7 +24,9 @@ ExpertForge transforms generic AI outputs into **domain-specific expert personas
 - 🧠 **Expert Persona Generation** - Create detailed AI personas with beliefs, mental models, expertise tiers, and unique personalities
 - 👥 **Advisory Board Teams** - Generate 12-node hierarchical team structures tailored to your organization
 - 📊 **Interactive Org Charts** - React Flow visualization with role-based color coding and Dagre layout
-- 💬 **Role-Based Chat** - Chat with assigned agents in the context of their organizational role
+- 💬 **Team Chat with Cascading Responses** - Chat with all agents simultaneously; they @mention each other and respond in sequence
+- 🎯 **Team-Scoped Agents** - Agents are filtered by team, keeping workspaces separate
+- 📋 **Thread Synthesis** - AI-powered summarization of chat discussions into actionable reports
 - 🏆 **Legendary Business Minds** - Draft cognitive templates of Bezos, Jobs, Musk, Buffett, and more
 - 🔗 **URL Scraping** - Import company context by scraping website content with Google Search grounding
 - 🎨 **Cyberpunk UI** - Dark theme with cyan/purple glow accents and glassmorphism effects
@@ -253,8 +255,9 @@ npx tsc --noEmit
 
 ## Roadmap
 
+- [x] ~~Team chat with @mentions across all agents~~ ✅ Implemented
+- [x] ~~Thread synthesis/export~~ ✅ Implemented
 - [ ] Sub-agent support for specialized role assistants
-- [ ] Team chat with @mentions across all agents
 - [ ] Export team configurations as JSON
 - [ ] Role analytics and performance tracking
 - [ ] Voice chat with agents

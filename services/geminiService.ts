@@ -583,13 +583,77 @@ Also suggest a concise title for this source (e.g., "Company X Overview" or "Pro
   return { title, content };
 }
 
+// Name generation utilities - generate names SERVER-SIDE before AI call to ensure uniqueness
+const FIRST_NAMES_MALE = [
+  'Adrian', 'Blake', 'Callum', 'Declan', 'Elliott', 'Finn', 'Graham', 'Harrison', 'Ian', 'Jordan',
+  'Kieran', 'Liam', 'Malcolm', 'Nolan', 'Oliver', 'Preston', 'Reid', 'Sebastian', 'Tristan', 'Victor',
+  'Wesley', 'Xavier', 'Zachary', 'Rowan', 'Bennett', 'Emmett', 'Griffin', 'Hayes', 'Jasper', 'Knox',
+  'Landon', 'Miles', 'Nash', 'Oscar', 'Rhett', 'Sawyer', 'Theo', 'Warren', 'Brooks', 'Clark',
+  'Davis', 'Ellis', 'Ford', 'Grant', 'Heath', 'Jude', 'Marcus', 'Nathan', 'Patrick', 'Russell',
+  'Scott', 'Travis', 'Vincent', 'William', 'Adam', 'Brian', 'Colin', 'Derek', 'Eric', 'Frank',
+  'George', 'Howard', 'Isaac', 'Jack', 'Keith', 'Leonard', 'Martin', 'Neil', 'Paul', 'Raymond'
+];
+
+const FIRST_NAMES_FEMALE = [
+  'Audrey', 'Blair', 'Clara', 'Diana', 'Eleanor', 'Fiona', 'Georgia', 'Helena', 'Iris', 'Jade',
+  'Kira', 'Leah', 'Morgan', 'Naomi', 'Paige', 'Rose', 'Sienna', 'Tessa', 'Violet', 'Willow',
+  'Zoe', 'Brynn', 'Cecilia', 'Darcy', 'Eden', 'Freya', 'Gemma', 'Hadley', 'Imogen', 'June',
+  'Lydia', 'Margot', 'Neve', 'Ophelia', 'Piper', 'Remi', 'Scarlett', 'Thea', 'Vera', 'Wren',
+  'Alexandra', 'Brooke', 'Caroline', 'Danielle', 'Elizabeth', 'Frances', 'Grace', 'Hannah', 'Isabelle', 'Julia',
+  'Katherine', 'Lauren', 'Meredith', 'Nicole', 'Olivia', 'Patricia', 'Rachel', 'Samantha', 'Taylor', 'Victoria'
+];
+
+const LAST_NAMES = [
+  'Callahan', 'Brennan', 'Whitmore', 'Ashford', 'Donovan', 'Mercer', 'Thornton', 'Gallagher', 'Hendricks',
+  'Carmichael', 'Whitaker', 'Pemberton', 'Fitzgerald', 'Holloway', 'Sinclair', 'Montgomery', 'Crawford',
+  'Ellison', 'Brantley', 'Winslow', 'Prescott', 'Langford', 'Hawthorne', 'Aldridge', 'Beckett', 'Chandler',
+  'Davenport', 'Everett', 'Fletcher', 'Garrison', 'Harding', 'Jennings', 'Keller', 'Lawson', 'Morrison',
+  'Norwood', 'Palmer', 'Reynolds', 'Sheffield', 'Underwood', 'Vaughn', 'Wellington', 'York', 'Anderson',
+  'Brooks', 'Campbell', 'Douglas', 'Edwards', 'Foster', 'Gibson', 'Hamilton', 'Irving', 'Jensen',
+  'Kennedy', 'Lambert', 'Mitchell', 'Nelson', 'Owen', 'Parker', 'Quinn', 'Roberts', 'Stevens', 'Thompson'
+];
+
+// Track used names to prevent duplicates within a session
+const usedNames = new Set<string>();
+
+function generateUniqueName(existingNames: string[] = []): { name: string; isMale: boolean } {
+  // Add existing names to the used set
+  existingNames.forEach(n => usedNames.add(n.toLowerCase()));
+  
+  // 70% male, 30% female
+  const isMale = Math.random() < 0.7;
+  const firstNames = isMale ? FIRST_NAMES_MALE : FIRST_NAMES_FEMALE;
+  
+  let attempts = 0;
+  while (attempts < 100) {
+    const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+    const lastName = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+    const fullName = `${firstName} ${lastName}`;
+    
+    if (!usedNames.has(fullName.toLowerCase())) {
+      usedNames.add(fullName.toLowerCase());
+      return { name: fullName, isMale };
+    }
+    attempts++;
+  }
+  
+  // Fallback: generate with timestamp suffix
+  const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+  const lastName = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+  return { name: `${firstName} ${lastName}`, isMale };
+}
+
 // Generate a custom AI agent for a specific role using team context and sources
 export async function generateCustomAgentForRole(
   roleName: string,
   teamContext: TeamContext,
-  teamSources: TeamSource[]
+  teamSources: TeamSource[],
+  existingAgentNames: string[] = []
 ): Promise<ExpertPersona> {
   const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+  
+  // Generate unique name SERVER-SIDE before AI call
+  const { name: agentName, isMale } = generateUniqueName(existingAgentNames);
   
   // Compile all team sources into context
   const sourcesContext = teamSources.map(source => 
@@ -618,24 +682,16 @@ Create a detailed expert persona that:
 4. Can speak authentically about the specific business context provided
 5. Would be a valuable advisor for someone in this exact role at this exact company
 
-UNIQUE NAME GENERATION (CRITICAL - READ CAREFULLY):
-- RANDOM SEED: ${Date.now()}-${Math.random().toString(36).substr(2, 8)}
-- You MUST generate a COMPLETELY UNIQUE name that has NEVER been used before
-- BANNED NAMES (DO NOT USE): James Hartley, David Hartley, James Mitchell, Julian Thorne, Marcus Thorne, Julian Beck, Julian Miller, Marcus Chen, Ryan O'Connor, Michael Torres, Chris Anderson, Tom Bradley, Sarah Mitchell, Kate Reynolds, Emily Chen, Rachel Torres, Zayan Mistry, Sloane Vance, Silas Vance, Elara Vane
-- GENDER: 70% male, 30% female
-- Pick ONE first name from this list (use the random seed to pick randomly):
-  MALE: Adrian, Blake, Callum, Declan, Elliott, Finn, Graham, Harrison, Ian, Jordan, Kieran, Liam, Malcolm, Nolan, Oliver, Preston, Quinn, Reid, Sebastian, Tristan, Victor, Wesley, Xavier, Zachary, Rowan, Bennett, Emmett, Griffin, Hayes, Jasper, Knox, Landon, Miles, Nash, Oscar, Phoenix, Rhett, Sawyer, Sterling, Theo, Warren, Brooks, Clark, Davis, Ellis, Ford, Grant, Heath, Irving, Jude
-  FEMALE: Audrey, Blair, Clara, Diana, Eleanor, Fiona, Georgia, Helena, Iris, Jade, Kira, Leah, Morgan, Naomi, Paige, Quinn, Rose, Sienna, Tessa, Uma, Violet, Willow, Zoe, Brynn, Cecilia, Darcy, Eden, Freya, Gemma, Hadley, Imogen, June, Lydia, Margot, Neve, Ophelia, Piper, Remi, Scarlett, Thea, Vera, Wren
-- Pick ONE last name from this list (use the random seed to pick randomly):
-  Callahan, Brennan, Whitmore, Ashford, Donovan, Mercer, Blackwell, Thornton, Gallagher, Hendricks, Carmichael, Whitaker, Pemberton, Fitzgerald, Holloway, Westbrook, Sinclair, Montgomery, Crawford, Ellison, Brantley, Kensington, Winslow, Prescott, Langford, Hawthorne, Aldridge, Beckett, Chandler, Davenport, Everett, Fletcher, Garrison, Harding, Jennings, Keller, Lawson, Morrison, Norwood, O'Brien, Palmer, Quincy, Reynolds, Sheffield, Thornberry, Underwood, Vaughn, Wellington, York
-- The combination must be UNIQUE - do not repeat patterns
+MANDATORY NAME (DO NOT CHANGE):
+The agent's name MUST be exactly: "${agentName}"
+Do not generate a different name. Use this exact name in all fields.
 
 CATEGORY ASSIGNMENT (CRITICAL):
 Based on the role "${roleName}", assign ONE category from: marketing, sales, engineering, product, finance, operations, hr, legal, consulting, strategy, design, data, leadership, general
 Choose the MOST relevant category for this role.
 
 The introduction MUST reference their role and the organization naturally.
-Example: "Hey, I'm [Name] — I've been thinking a lot about ${teamContext.name}'s growth challenges, especially around [specific area]. As your ${roleName}, I'm focused on [key responsibility]. What's on your mind?"
+Example: "Hey, I'm ${agentName} — I've been thinking a lot about ${teamContext.name}'s growth challenges, especially around [specific area]. As your ${roleName}, I'm focused on [key responsibility]. What's on your mind?"
 
 Make their expertise, beliefs, and mental models specifically relevant to:
 - The role they're filling (${roleName})

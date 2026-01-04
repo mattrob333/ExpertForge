@@ -307,6 +307,11 @@ const App: React.FC = () => {
               return savedExpert;
             }}
             onSelectExpert={selectExpert}
+            onDeleteExpert={async (expertId) => {
+              // Delete expert from storage and remove from list
+              await deleteExpert(expertId, user?.id);
+              setExperts(prev => prev.filter(e => e.id !== expertId));
+            }}
           />
         )}
 

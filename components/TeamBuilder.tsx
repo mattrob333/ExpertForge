@@ -17,14 +17,154 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { TeamStructure, TeamContext, ExpertPersona, TeamSource, Legend, ExpertCategory } from '../types';
 import { getLayoutedElements, inferNodeLevel } from '../lib/layoutOrgChart';
-import { getTeamSources, saveTeamSource, deleteTeamSource, getRoleAssignments, saveRoleAssignments, RoleAssignment } from '../services/storageService';
+import { getTeamSources, saveTeamSource, deleteTeamSource, getRoleAssignments, saveRoleAssignments, RoleAssignment, TeamContextWithId } from '../services/storageService';
 import { scrapeUrlContent, generateCustomAgentForRole } from '../services/geminiService';
 import { LEGENDS } from '../data/legends';
 import { GoogleGenAI } from '@google/genai';
 
+// Simple markdown renderer for chat messages
+const renderMarkdown = (text: string): React.ReactNode => {
+  if (!text) return null;
+  
+  // Split by code blocks first to preserve them
+  const parts = text.split(/(`{3}[\s\S]*?`{3}|`[^`]+`)/g);
+  
+  return parts.map((part, i) => {
+    // Code blocks
+    if (part.startsWith('```') && part.endsWith('```')) {
+      const code = part.slice(3, -3).replace(/^\w+\n/, ''); // Remove language identifier
+      return <pre key={i} className="bg-slate-900 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono text-green-400">{code}</pre>;
+    }
+    // Inline code
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={i} className="bg-slate-700 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-mono">{part.slice(1, -1)}</code>;
+    }
+    
+    // Process other markdown
+    let processed: React.ReactNode[] = [];
+    const lines = part.split('\n');
+    
+    lines.forEach((line, lineIdx) => {
+      // Headers
+      if (line.startsWith('### ')) {
+        processed.push(<h4 key={`h3-${lineIdx}`} className="text-white font-bold text-sm mt-3 mb-1">{line.slice(4)}</h4>);
+        return;
+      }
+      if (line.startsWith('## ')) {
+        processed.push(<h3 key={`h2-${lineIdx}`} className="text-white font-bold text-base mt-3 mb-1">{line.slice(3)}</h3>);
+        return;
+      }
+      if (line.startsWith('# ')) {
+        processed.push(<h2 key={`h1-${lineIdx}`} className="text-white font-bold text-lg mt-3 mb-1">{line.slice(2)}</h2>);
+        return;
+      }
+      
+      // Bullet points
+      if (line.match(/^[\-\*]\s/)) {
+        const content = line.slice(2);
+        processed.push(
+          <div key={`li-${lineIdx}`} className="flex gap-2 ml-2">
+            <span className="text-cyan-500">•</span>
+            <span>{renderInlineMarkdown(content)}</span>
+          </div>
+        );
+        return;
+      }
+      
+      // Numbered lists
+      if (line.match(/^\d+\.\s/)) {
+        const num = line.match(/^(\d+)\./)?.[1];
+        const content = line.replace(/^\d+\.\s/, '');
+        processed.push(
+          <div key={`ol-${lineIdx}`} className="flex gap-2 ml-2">
+            <span className="text-cyan-500 font-mono text-xs">{num}.</span>
+            <span>{renderInlineMarkdown(content)}</span>
+          </div>
+        );
+        return;
+      }
+      
+      // Regular line
+      if (line.trim()) {
+        processed.push(<span key={`p-${lineIdx}`}>{renderInlineMarkdown(line)}{lineIdx < lines.length - 1 ? '\n' : ''}</span>);
+      } else if (lineIdx < lines.length - 1) {
+        processed.push(<br key={`br-${lineIdx}`} />);
+      }
+    });
+    
+    return <span key={i}>{processed}</span>;
+  });
+};
+
+// Render inline markdown (bold, italic, links, @mentions)
+const renderInlineMarkdown = (text: string): React.ReactNode => {
+  // Process bold, italic, links, and @mentions
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+  
+  while (remaining.length > 0) {
+    // @mentions - highlight in cyan
+    const mentionMatch = remaining.match(/^@([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)*)/);
+    if (mentionMatch) {
+      parts.push(<span key={key++} className="text-cyan-400 font-semibold">{mentionMatch[0]}</span>);
+      remaining = remaining.slice(mentionMatch[0].length);
+      continue;
+    }
+    
+    // Bold **text**
+    const boldMatch = remaining.match(/^\*\*(.+?)\*\*/);
+    if (boldMatch) {
+      parts.push(<strong key={key++} className="font-bold text-white">{boldMatch[1]}</strong>);
+      remaining = remaining.slice(boldMatch[0].length);
+      continue;
+    }
+    
+    // Italic *text*
+    const italicMatch = remaining.match(/^\*(.+?)\*/);
+    if (italicMatch) {
+      parts.push(<em key={key++} className="italic">{italicMatch[1]}</em>);
+      remaining = remaining.slice(italicMatch[0].length);
+      continue;
+    }
+    
+    // Links [text](url)
+    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+    if (linkMatch) {
+      parts.push(
+        <a key={key++} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" 
+           className="text-cyan-400 underline hover:text-cyan-300">
+          {linkMatch[1]}
+        </a>
+      );
+      remaining = remaining.slice(linkMatch[0].length);
+      continue;
+    }
+    
+    // Plain URLs
+    const urlMatch = remaining.match(/^(https?:\/\/[^\s]+)/);
+    if (urlMatch) {
+      parts.push(
+        <a key={key++} href={urlMatch[1]} target="_blank" rel="noopener noreferrer"
+           className="text-cyan-400 underline hover:text-cyan-300 break-all">
+          {urlMatch[1]}
+        </a>
+      );
+      remaining = remaining.slice(urlMatch[0].length);
+      continue;
+    }
+    
+    // Regular character
+    parts.push(remaining[0]);
+    remaining = remaining.slice(1);
+  }
+  
+  return parts;
+};
+
 interface TeamBuilderProps {
   structure: TeamStructure;
-  context: TeamContext | null;
+  context: TeamContextWithId | TeamContext | null;
   teamId?: string;
   experts: ExpertPersona[];
   onSave: () => void;
@@ -32,7 +172,10 @@ interface TeamBuilderProps {
   onGoHome: () => void;
   onExpertCreated?: (expert: ExpertPersona) => Promise<ExpertPersona> | void;
   onSelectExpert?: (expert: ExpertPersona) => void;
+  onDeleteExpert?: (expertId: string) => void;
 }
+
+type CenterPanelView = 'orgChart' | 'teamChat';
 
 // Category inference and colors (same as TeamChat)
 const inferCategory = (expert: ExpertPersona): ExpertCategory => {
@@ -213,6 +356,7 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   onGoHome,
   onExpertCreated,
   onSelectExpert,
+  onDeleteExpert,
 }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -220,6 +364,23 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [roleModalTab, setRoleModalTab] = useState<RoleModalTab>('generate');
+  
+  // Center panel view state (org chart vs team chat)
+  const [centerPanelView, setCenterPanelView] = useState<CenterPanelView>('orgChart');
+  
+  // Team chat state - includes agentRole for display
+  const [teamChatMessages, setTeamChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; agentName?: string; agentAvatar?: string; agentRole?: string }>>([]);
+  const [teamChatInput, setTeamChatInput] = useState('');
+  const [sendingTeamChat, setSendingTeamChat] = useState(false);
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState<{ agentName: string; agentAvatar: string; agentRole: string; content: string } | null>(null);
+  const [synthesizing, setSynthesizing] = useState(false);
+  const chatEndRef = React.useRef<HTMLDivElement>(null);
+  
+  // Auto-scroll chat to bottom when new messages arrive
+  React.useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [teamChatMessages, streamingMessage]);
   
   // Hover tooltip state for expert bench
   const [hoveredExpert, setHoveredExpert] = useState<ExpertPersona | null>(null);
@@ -261,6 +422,7 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   } | null>(null);
   const [cancelBulkGeneration, setCancelBulkGeneration] = useState(false);
   const cancelBulkGenerationRef = React.useRef(false);
+  const bulkGeneratingRef = React.useRef(false); // Prevents assignment reload during bulk generation
   const [showAgentSelector, setShowAgentSelector] = useState(false);
 
   // Helper: Find direct subordinates (nodes that this node is the source of)
@@ -290,8 +452,9 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   }, [teamId]);
 
   // Load role assignments when teamId is available
+  // Skip during bulk generation to prevent race condition
   useEffect(() => {
-    if (teamId) {
+    if (teamId && !bulkGeneratingRef.current) {
       getRoleAssignments(teamId).then((savedAssignments) => {
         const assignmentsObj: NodeAssignment = {};
         savedAssignments.forEach((ra) => {
@@ -409,12 +572,22 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       return;
     }
     
+    // Verify context matches teamId to prevent cross-team contamination
+    const contextWithId = context as TeamContextWithId;
+    if (teamId && contextWithId.id && contextWithId.id !== teamId) {
+      console.error('Context mismatch detected!', { contextId: contextWithId.id, teamId, contextName: context.name });
+      alert('Team context mismatch detected. Please refresh the page and try again.');
+      return;
+    }
+    
     const roleName = structure.nodes.find(n => n.id === selectedNode)?.role || 'Agent';
-    console.log('Generating custom agent for:', { roleName, context, sourcesCount: sources.length });
+    console.log('Generating custom agent for:', { roleName, teamId, contextName: context.name, sourcesCount: sources.length });
     
     setGeneratingAgent(true);
     try {
-      const customAgent = await generateCustomAgentForRole(roleName, context, sources);
+      // Get existing agent names to avoid duplicates
+      const existingNames = experts.map(e => e.name);
+      const customAgent = await generateCustomAgentForRole(roleName, context, sources, existingNames);
       console.log('Custom agent generated:', customAgent);
       
       // Add teamId to associate this agent with this specific team
@@ -448,6 +621,24 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       alert('Please add at least one knowledge source before generating team agents.');
       return;
     }
+    
+    // Verify context matches teamId to prevent cross-team contamination
+    const contextWithId = context as TeamContextWithId;
+    if (teamId && contextWithId.id && contextWithId.id !== teamId) {
+      console.error('Context mismatch detected!', { contextId: contextWithId.id, teamId, contextName: context.name });
+      alert('Team context mismatch detected. Please refresh the page and try again.');
+      return;
+    }
+    
+    // Log context to help debug cross-team contamination
+    console.log('Generating agents for team:', { 
+      teamId, 
+      contextId: contextWithId.id,
+      contextName: context.name, 
+      contextType: context.type,
+      sourcesCount: sources.length,
+      sourcesTitles: sources.map(s => s.title)
+    });
 
     // Get all nodes that don't have an assignment yet
     const unassignedNodes = structure.nodes.filter(node => {
@@ -460,8 +651,9 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       return;
     }
 
-    // Reset cancellation flag
+    // Reset cancellation flag and set bulk generating flag
     cancelBulkGenerationRef.current = false;
+    bulkGeneratingRef.current = true; // Prevent assignment reload during generation
     setCancelBulkGeneration(false);
     setGeneratingAllAgents(true);
     setBulkGenerationProgress({
@@ -470,6 +662,9 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       currentRole: '',
       completed: [],
     });
+
+    // Accumulate all new assignments to ensure they're all applied
+    const newAssignments: NodeAssignment = {};
 
     // Process each node sequentially with delays
     for (let i = 0; i < unassignedNodes.length; i++) {
@@ -492,9 +687,16 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       try {
         console.log(`Generating agent ${i + 1}/${unassignedNodes.length}: ${roleName}`);
         
+        // Get existing agent names (including newly generated ones) to avoid duplicates
+        const existingNames = [
+          ...experts.map(e => e.name),
+          ...Object.values(newAssignments).map(a => a?.customAgent?.name).filter(Boolean) as string[]
+        ];
+        
         // Generate the custom agent for this role
-        const customAgent = await generateCustomAgentForRole(roleName, context, sources);
+        const customAgent = await generateCustomAgentForRole(roleName, context, sources, existingNames);
         customAgent.teamId = teamId;
+        customAgent.role = roleName; // Store the role for display purposes
 
         // Save the custom agent and get back the saved version (with correct ID from database)
         let savedAgent = customAgent;
@@ -503,13 +705,18 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
           const result = await onExpertCreated(customAgent);
           if (result) {
             savedAgent = result;
+            // Also ensure role is preserved after save
+            savedAgent.role = roleName;
           }
         }
 
-        // Assign to the node using the saved agent (with correct ID)
+        // Store in accumulated assignments
+        newAssignments[node.id] = { expert: null, legend: null, human: null, customAgent: savedAgent };
+
+        // Update assignments state immediately for UI feedback
         setAssignments(prev => ({
           ...prev,
-          [node.id]: { expert: null, legend: null, human: null, customAgent: savedAgent },
+          ...newAssignments, // Merge ALL accumulated assignments each time
         }));
 
         // Update progress - completed successfully
@@ -536,6 +743,17 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
+
+    // Final update to ensure all assignments are applied
+    setAssignments(prev => ({
+      ...prev,
+      ...newAssignments,
+    }));
+
+    // Allow a brief delay for state to persist before re-enabling assignment loading
+    setTimeout(() => {
+      bulkGeneratingRef.current = false;
+    }, 1000);
 
     // Generation complete
     setGeneratingAllAgents(false);
@@ -600,7 +818,7 @@ User: ${userMessage}
 Respond as ${agent.name} in character, being helpful and specific to the role and organization. Keep responses conversational but substantive (2-4 paragraphs max).`;
 
       const response = await ai.models.generateContent({
-        model: 'models/gemini-2.0-flash',
+        model: 'models/gemini-3-flash-preview',
         contents: prompt,
       });
       
@@ -610,6 +828,340 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
       setRoleChatMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
     } finally {
       setSendingRoleChat(false);
+    }
+  };
+
+  // Helper: Get direct reports for a given node
+  const getDirectReportsForNode = (nodeId: string) => {
+    const childEdges = structure.edges.filter(e => e.source === nodeId);
+    return childEdges.map(edge => {
+      const childNode = structure.nodes.find(n => n.id === edge.target);
+      const childAssignment = assignments[edge.target];
+      const childAgent = childAssignment?.customAgent || childAssignment?.expert;
+      return childNode ? { node: childNode, agent: childAgent } : null;
+    }).filter(Boolean) as Array<{ node: { id: string; role: string }; agent: ExpertPersona | null }>;
+  };
+
+  // Helper: Build full org hierarchy map
+  const buildOrgHierarchyMap = () => {
+    const map: Record<string, { role: string; agent: ExpertPersona | null; directReports: string[] }> = {};
+    
+    for (const node of structure.nodes) {
+      const assignment = assignments[node.id];
+      const agent = assignment?.customAgent || assignment?.expert;
+      const directReports = getDirectReportsForNode(node.id);
+      
+      map[node.id] = {
+        role: node.role,
+        agent,
+        directReports: directReports.map(dr => dr.node.id),
+      };
+    }
+    return map;
+  };
+
+  // Helper: Generate streaming response from a specific agent
+  const generateAgentResponseStreaming = async (
+    ai: any,
+    agentData: { agent: ExpertPersona; role: string; nodeId: string },
+    userMessage: string,
+    conversationContext: string,
+    allAgents: Array<{ agent: ExpertPersona; role: string; nodeId: string }>,
+    onChunk: (text: string) => void
+  ): Promise<{ content: string; mentionedAgents: Array<{ agent: ExpertPersona; role: string; nodeId: string }> }> => {
+    
+    // Build this agent's direct reports info
+    const directReports = getDirectReportsForNode(agentData.nodeId);
+    const directReportsInfo = directReports.length > 0
+      ? directReports.map(dr => dr.agent 
+          ? `  - @${dr.agent.name} (${dr.node.role}): ${dr.agent.essence}`
+          : `  - ${dr.node.role}: [Unfilled position]`
+        ).join('\n')
+      : '  None - you have no direct reports';
+
+    // Build full org structure for context
+    const orgStructure = allAgents.map(a => `- ${a.role}: @${a.agent.name}`).join('\n');
+    const sourcesContext = sources.map(s => `[${s.title}]: ${s.content.slice(0, 1000)}`).join('\n\n');
+
+    // Determine if this is a follow-up response or the first response
+    const isFollowUp = conversationContext.length > 0;
+    
+    const prompt = `You are ${agentData.agent.name}, the ${agentData.role} at ${context?.name || 'this organization'}.
+
+WHO YOU ARE:
+${agentData.agent.essence}
+Your beliefs: ${agentData.agent.coreBeliefs?.join('; ') || 'Excellence, innovation, results'}
+${agentData.agent.introduction ? `Your voice: "${agentData.agent.introduction}"` : ''}
+
+YOUR RESOURCES & TOOLS:
+- Web Search: You can research anything online if you need data, examples, or validation
+- Company Knowledge: ${sourcesContext ? 'You have access to company documents (shown below)' : 'No documents loaded yet'}
+- Your Team: ${directReportsInfo !== '  None - you have no direct reports' ? 'You have direct reports who can help (shown below)' : 'You have no direct reports'}
+
+${sourcesContext ? `COMPANY DOCUMENTS:\n${sourcesContext}\n` : ''}
+
+YOUR DIRECT REPORTS:
+${directReportsInfo}
+
+FULL TEAM:
+${orgStructure}
+
+${conversationContext ? `=== CONVERSATION THREAD ===\n${conversationContext}\n=== END THREAD ===\n` : ''}
+
+THE REQUEST: ${userMessage}
+
+---
+
+BEFORE YOU RESPOND, THINK THROUGH THIS (don't write this out, just internalize):
+1. What's the REAL problem or opportunity here? Look beneath the surface.
+2. What's MY unique perspective as ${agentData.role}? What do I see that others might miss?
+3. What do I already know that's relevant? (my expertise, company docs, industry knowledge)
+4. Should I research something? (I can use web search if I need data or examples)
+5. Should I handle this myself, or does someone else have better expertise for part of this?
+
+HOW TO RESPOND:
+${isFollowUp ? `You're joining an ongoing discussion. Your colleagues have already weighed in.
+- If you AGREE with someone, say so briefly and BUILD on their point
+- If you DISAGREE or see a flaw, say so directly but respectfully - "I see it differently..." or "I'd push back on that..."
+- Reference what was said: "What [Name] said about X is spot on, and I'd add..."
+- Don't just echo - add something NEW from your perspective` : `You're kicking off this discussion as ${agentData.role}.
+- What's your honest take? Share your thinking.
+- If you need input from someone specific, @mention them with a focused question
+- Set direction but leave room for others to contribute or challenge`}
+
+THE TEAM'S GOAL:
+- We're working toward a RESOLUTION or actionable outcome
+- Think: Big Picture (macro) → Specific Actions (micro)
+- If the conversation is going in circles, call it out and propose a path forward
+- Every response should move us closer to solving the problem
+
+YOUR RESPONSE STYLE:
+- Be conversational and NATURAL - like a real colleague, not a report
+- Vary your length: sometimes 1 punchy paragraph, sometimes 3-4 if needed
+- Show personality: humor, frustration, excitement - whatever fits
+- Challenge ideas you think are wrong. Defend positions you believe in.
+- NO corporate speak, NO "Great question!", NO "I appreciate the opportunity"
+- Just dive in and say what you think
+
+WHEN TO @MENTION SOMEONE:
+- Only if you genuinely need their specific expertise
+- Be specific: "@[Full Name], what's your take on [specific thing]?"
+- Don't delegate just to seem collaborative - that's performative
+
+Now respond as ${agentData.agent.name}. Be real. Be useful. Move us forward.`;
+
+    // Use streaming with Google Search grounding
+    let fullText = '';
+    const stream = await ai.models.generateContentStream({
+      model: 'models/gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }]
+      }
+    });
+
+    for await (const chunk of stream) {
+      const chunkText = chunk.text || '';
+      fullText += chunkText;
+      onChunk(fullText);
+    }
+    
+    // Detect @mentions in the response - improved regex to catch more patterns
+    // Matches: @FirstName LastName, @FirstName, @First Last, etc.
+    const mentionPattern = /@([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/g;
+    const mentions = [...fullText.matchAll(mentionPattern)].map(m => m[1].trim());
+    
+    // Find mentioned agents by matching name (full or partial)
+    const mentionedAgents: Array<{ agent: ExpertPersona; role: string; nodeId: string }> = [];
+    for (const mentionName of mentions) {
+      const matchedAgent = allAgents.find(a => {
+        const agentFullName = a.agent.name.toLowerCase();
+        const mentionLower = mentionName.toLowerCase();
+        // Match full name or first name
+        return agentFullName === mentionLower || 
+               agentFullName.startsWith(mentionLower + ' ') ||
+               agentFullName.split(' ')[0] === mentionLower;
+      });
+      if (matchedAgent && matchedAgent.agent.id !== agentData.agent.id && 
+          !mentionedAgents.some(m => m.agent.id === matchedAgent.agent.id)) {
+        mentionedAgents.push(matchedAgent);
+      }
+    }
+
+    return { content: fullText, mentionedAgents };
+  };
+
+  // Team Chat - send message with cascading agent responses
+  const handleTeamChatSend = async () => {
+    if (!teamChatInput.trim()) return;
+    
+    const userMessage = teamChatInput.trim();
+    setTeamChatInput('');
+    setTeamChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setSendingTeamChat(true);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+      
+      // Get all assigned agents with their node IDs
+      const assignedAgents = Object.entries(assignments)
+        .map(([nodeId, assignment]) => {
+          const agent = assignment?.customAgent || assignment?.expert;
+          if (!agent) return null;
+          const node = structure.nodes.find(n => n.id === nodeId);
+          return { agent, role: node?.role || 'Team Member', nodeId };
+        })
+        .filter(Boolean) as Array<{ agent: ExpertPersona; role: string; nodeId: string }>;
+      
+      if (assignedAgents.length === 0) {
+        setTeamChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: 'No agents are assigned yet. Please generate or assign agents to the org chart first.',
+          agentName: 'System'
+        }]);
+        setSendingTeamChat(false);
+        return;
+      }
+      
+      // Find the CEO/top-level agent to respond first (or first agent if no CEO)
+      const ceoAgent = assignedAgents.find(a => 
+        a.role.toLowerCase().includes('ceo') || 
+        a.role.toLowerCase().includes('chief executive')
+      ) || assignedAgents[0];
+      
+      // Track which agents have already responded to avoid loops
+      const respondedAgents = new Set<string>();
+      let conversationContext = '';
+      
+      // Cascading response loop - allow more responses for full team discussions
+      const pendingResponders = [ceoAgent];
+      let responseCount = 0;
+      const maxResponses = 10; // Allow up to 10 responses for thorough team discussions
+      
+      while (pendingResponders.length > 0 && responseCount < maxResponses) {
+        const currentResponder = pendingResponders.shift()!;
+        
+        // Skip if already responded
+        if (respondedAgents.has(currentResponder.agent.id)) continue;
+        respondedAgents.add(currentResponder.agent.id);
+        
+        // Set up streaming message display
+        setStreamingMessage({
+          agentName: currentResponder.agent.name,
+          agentAvatar: currentResponder.agent.avatarUrl,
+          agentRole: currentResponder.role,
+          content: ''
+        });
+        
+        // Generate streaming response
+        const { content, mentionedAgents } = await generateAgentResponseStreaming(
+          ai,
+          currentResponder,
+          userMessage,
+          conversationContext,
+          assignedAgents,
+          (streamedText) => {
+            setStreamingMessage(prev => prev ? { ...prev, content: streamedText } : null);
+          }
+        );
+        
+        // Clear streaming and add final message to chat
+        setStreamingMessage(null);
+        setTeamChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content,
+          agentName: currentResponder.agent.name,
+          agentAvatar: currentResponder.agent.avatarUrl,
+          agentRole: currentResponder.role
+        }]);
+        
+        // Update conversation context for next responder
+        conversationContext += `\n${currentResponder.agent.name} (${currentResponder.role}): ${content}\n`;
+        responseCount++;
+        
+        // Add mentioned agents to pending responders (if they haven't responded yet)
+        for (const mentioned of mentionedAgents) {
+          if (!respondedAgents.has(mentioned.agent.id)) {
+            pendingResponders.push(mentioned);
+          }
+        }
+        
+        // Small delay between responses for better UX
+        if (pendingResponders.length > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
+    } catch (err) {
+      console.error('Failed to send team chat:', err);
+      setTeamChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: 'Sorry, I encountered an error. Please try again.',
+        agentName: 'System'
+      }]);
+    } finally {
+      setSendingTeamChat(false);
+    }
+  };
+
+  // Synthesize thread into a summary report
+  const handleSynthesizeThread = async () => {
+    if (teamChatMessages.length === 0) return;
+    
+    setSynthesizing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+      
+      const thread = teamChatMessages.map(m => 
+        m.role === 'user' ? `USER: ${m.content}` : `${m.agentName} (${m.agentRole}): ${m.content}`
+      ).join('\n\n');
+      
+      const prompt = `You are a skilled business analyst. Synthesize this team discussion into a clear, actionable summary report.
+
+TEAM DISCUSSION:
+${thread}
+
+Create a summary with these sections:
+
+## Executive Summary
+(2-3 sentences capturing the core discussion and outcome)
+
+## Key Decisions Made
+(Bullet points of any decisions reached)
+
+## Action Items
+(Specific next steps with who is responsible, if mentioned)
+
+## Open Questions
+(Any unresolved issues that need follow-up)
+
+## Recommendations
+(Your synthesis of the best path forward based on the discussion)
+
+Be concise but thorough. Use markdown formatting.`;
+
+      const response = await ai.models.generateContent({
+        model: 'models/gemini-3-flash-preview',
+        contents: prompt,
+      });
+      
+      const summary = response.text;
+      
+      // Copy to clipboard and show in a new message
+      navigator.clipboard.writeText(summary);
+      
+      setTeamChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: `**📋 Thread Summary (copied to clipboard)**\n\n${summary}`,
+        agentName: 'Synthesis',
+        agentRole: 'Report'
+      }]);
+      
+    } catch (err) {
+      console.error('Failed to synthesize thread:', err);
+      alert('Failed to generate summary. Please try again.');
+    } finally {
+      setSynthesizing(false);
     }
   };
 
@@ -761,8 +1313,8 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
 
       {/* Main Content */}
       <div className="flex pt-16 h-screen overflow-hidden">
-        {/* Left Sidebar - Context & Rationale */}
-        <aside className="w-72 border-r border-slate-800 bg-slate-900/50 flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+        {/* Left Sidebar - Context & Rationale - STICKY */}
+        <aside className="w-72 border-r border-slate-800 bg-slate-900/50 flex flex-col h-[calc(100vh-4rem)] overflow-y-auto sticky top-16">
           <div className="flex-1 overflow-y-auto p-6">
           {context && (
             <div className="space-y-6">
@@ -855,83 +1407,347 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
           </div>
         </aside>
 
-        {/* Center - React Flow Canvas */}
-        <div className="flex-1 relative" style={{ height: 'calc(100vh - 4rem)' }}>
-          <ReactFlowProvider>
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.3 }}
-              minZoom={0.1}
-              maxZoom={2}
-              // CRITICAL: Enable all interactivity
-              nodesDraggable={true}
-              nodesConnectable={false}
-              elementsSelectable={true}
-              zoomOnScroll={true}
-              zoomOnPinch={true}
-              panOnScroll={false}
-              panOnDrag={true}
-              selectionOnDrag={false}
-              zoomOnDoubleClick={true}
-              selectNodesOnDrag={false}
-              proOptions={{ hideAttribution: true }}
-              defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+        {/* Center Panel - Tab Toggle + Content */}
+        <div className="flex-1 flex flex-col" style={{ height: 'calc(100vh - 4rem)' }}>
+          {/* Tab Toggle Header */}
+          <div className="flex items-center justify-center gap-2 p-3 border-b border-slate-800 bg-slate-900/50">
+            <button
+              onClick={() => setCenterPanelView('orgChart')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${
+                centerPanelView === 'orgChart'
+                  ? 'bg-gradient-to-r from-purple-600 to-cyan-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
             >
-              <Background variant={'dots' as any} gap={20} size={1} color="#1e293b" />
-              <Controls 
-                position="bottom-left"
-                showZoom={true}
-                showFitView={true}
-                showInteractive={false}
-                className="!bg-slate-900 !border-slate-700 !shadow-xl [&>button]:!bg-slate-800 [&>button]:!border-slate-700 [&>button]:!fill-slate-400 [&>button:hover]:!bg-slate-700" 
-              />
-              <MiniMap 
-                nodeColor={(node) => {
-                  const level = node.data?.level || 1;
-                  const colors: Record<number, string> = {
-                    1: '#8B5CF6',
-                    2: '#3B82F6',
-                    3: '#10B981',
-                    4: '#F59E0B',
-                  };
-                  return colors[level] || '#64748B';
-                }}
-                maskColor="rgba(0, 0, 0, 0.8)"
-                className="!bg-slate-900/90 !border-slate-700"
-                zoomable
-                pannable
-              />
-            </ReactFlow>
-          </ReactFlowProvider>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Org Chart
+            </button>
+            <button
+              onClick={() => setCenterPanelView('teamChat')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${
+                centerPanelView === 'teamChat'
+                  ? 'bg-gradient-to-r from-purple-600 to-cyan-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              Team Chat
+            </button>
+          </div>
+
+          {/* Org Chart View */}
+          {centerPanelView === 'orgChart' && (
+            <div className="flex-1 relative">
+              <ReactFlowProvider>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  nodeTypes={nodeTypes}
+                  fitView
+                  fitViewOptions={{ padding: 0.3 }}
+                  minZoom={0.1}
+                  maxZoom={2}
+                  nodesDraggable={true}
+                  nodesConnectable={false}
+                  elementsSelectable={true}
+                  zoomOnScroll={true}
+                  zoomOnPinch={true}
+                  panOnScroll={false}
+                  panOnDrag={true}
+                  selectionOnDrag={false}
+                  zoomOnDoubleClick={true}
+                  selectNodesOnDrag={false}
+                  proOptions={{ hideAttribution: true }}
+                  defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+                >
+                  <Background variant={'dots' as any} gap={20} size={1} color="#1e293b" />
+                  <Controls 
+                    position="bottom-left"
+                    showZoom={true}
+                    showFitView={true}
+                    showInteractive={false}
+                    className="!bg-slate-900 !border-slate-700 !shadow-xl [&>button]:!bg-slate-800 [&>button]:!border-slate-700 [&>button]:!fill-slate-400 [&>button:hover]:!bg-slate-700" 
+                  />
+                  <MiniMap 
+                    nodeColor={(node) => {
+                      const level = node.data?.level || 1;
+                      const colors: Record<number, string> = {
+                        1: '#8B5CF6',
+                        2: '#3B82F6',
+                        3: '#10B981',
+                        4: '#F59E0B',
+                      };
+                      return colors[level] || '#64748B';
+                    }}
+                    maskColor="rgba(0, 0, 0, 0.8)"
+                    className="!bg-slate-900/90 !border-slate-700"
+                    zoomable
+                    pannable
+                  />
+                </ReactFlow>
+              </ReactFlowProvider>
+            </div>
+          )}
+
+          {/* Team Chat View */}
+          {centerPanelView === 'teamChat' && (
+            <div className="flex-1 flex flex-col bg-[#0f172a] h-full min-h-0">
+              {/* Chat Header - FIXED */}
+              <div className="shrink-0 p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Team Chat</h3>
+                  <p className="text-slate-500 text-xs">Chat with all agents in your org chart</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {teamChatMessages.length > 0 && (
+                    <>
+                      <button
+                        onClick={handleSynthesizeThread}
+                        disabled={synthesizing}
+                        className="px-3 py-1.5 text-xs font-mono uppercase tracking-wider text-cyan-400 hover:text-white hover:bg-cyan-600/20 border border-cyan-500/50 rounded-lg transition-all flex items-center gap-2 disabled:opacity-50"
+                        title="Generate AI summary of the thread"
+                      >
+                        {synthesizing ? (
+                          <div className="w-3.5 h-3.5 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        )}
+                        Synthesize
+                      </button>
+                      <button
+                        onClick={() => {
+                          const thread = teamChatMessages.map(m => 
+                            m.role === 'user' ? `USER: ${m.content}` : `${m.agentName} (${m.agentRole}): ${m.content}`
+                          ).join('\n\n---\n\n');
+                          navigator.clipboard.writeText(thread);
+                          alert('Thread copied to clipboard!');
+                        }}
+                        className="px-3 py-1.5 text-xs font-mono uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700 rounded-lg transition-all flex items-center gap-2"
+                        title="Copy thread to clipboard"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Export
+                      </button>
+                      <button
+                        onClick={() => setTeamChatMessages([])}
+                        className="px-3 py-1.5 text-xs font-mono uppercase tracking-wider text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700 rounded-lg transition-all flex items-center gap-2"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Clear
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              
+              {/* Agent Roster - FIXED */}
+              <div className="shrink-0 p-3 border-b border-slate-800 bg-slate-900/30">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {Object.entries(assignments).map(([nodeId, assignment]) => {
+                    const agent = assignment?.customAgent || assignment?.expert;
+                    if (!agent) return null;
+                    const node = structure.nodes.find(n => n.id === nodeId);
+                    return (
+                      <button 
+                        key={nodeId}
+                        onClick={() => setTeamChatInput(prev => prev + `@${agent.name} `)}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-full shrink-0 hover:border-cyan-500/50 hover:bg-slate-700/50 transition-all cursor-pointer"
+                        title={`Click to mention ${agent.name}`}
+                      >
+                        <img src={agent.avatarUrl} alt={agent.name} className="w-6 h-6 rounded-full object-cover" />
+                        <span className="text-white text-xs font-medium">{agent.name.split(' ')[0]}</span>
+                        <span className="text-slate-400 text-[10px]">- {node?.role?.replace(/^(Chief |VP of |Director of |Head of )/, '').slice(0, 12) || 'Agent'}</span>
+                      </button>
+                    );
+                  })}
+                  {Object.values(assignments).filter(a => a?.customAgent || a?.expert).length === 0 && (
+                    <p className="text-slate-500 text-xs">No agents assigned yet. Generate agents first.</p>
+                  )}
+                </div>
+              </div>
+              
+              {/* Chat Messages - SCROLLABLE */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+                {teamChatMessages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500/20 to-cyan-500/20 flex items-center justify-center mb-4">
+                      <svg className="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+                      </svg>
+                    </div>
+                    <h4 className="text-white font-bold mb-2">Start a Team Conversation</h4>
+                    <p className="text-slate-500 text-sm max-w-md">
+                      Ask questions, delegate tasks, or brainstorm with your AI team. Use @mentions to direct questions to specific agents.
+                    </p>
+                  </div>
+                ) : (
+                  teamChatMessages.map((msg, i) => (
+                    <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                      {msg.role === 'assistant' && msg.agentAvatar && (
+                        <img src={msg.agentAvatar} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                      )}
+                      <div className={`max-w-[70%] ${msg.role === 'user' ? 'bg-cyan-600/20 border-cyan-500/30' : 'bg-slate-800/50 border-slate-700'} border rounded-xl p-3`}>
+                        {msg.role === 'assistant' && msg.agentName && (
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-cyan-400 text-xs font-bold">{msg.agentName}</p>
+                            {msg.agentRole && (
+                              <span className="text-[9px] font-mono text-slate-500 uppercase px-1.5 py-0.5 bg-slate-700/50 rounded">
+                                {msg.agentRole}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <div className="text-white text-sm whitespace-pre-wrap">{renderMarkdown(msg.content)}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+                {/* Streaming message display */}
+                {streamingMessage && (
+                  <div className="flex gap-3">
+                    <img src={streamingMessage.agentAvatar} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                    <div className="max-w-[70%] bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-cyan-400 text-xs font-bold">{streamingMessage.agentName}</p>
+                        <span className="text-[9px] font-mono text-slate-500 uppercase px-1.5 py-0.5 bg-slate-700/50 rounded">
+                          {streamingMessage.agentRole}
+                        </span>
+                      </div>
+                      <div className="text-white text-sm whitespace-pre-wrap">{streamingMessage.content ? renderMarkdown(streamingMessage.content) : <span className="text-slate-400 animate-pulse">●●●</span>}</div>
+                    </div>
+                  </div>
+                )}
+                {sendingTeamChat && !streamingMessage && (
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center">
+                      <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+                      <p className="text-slate-400 text-sm">Team is thinking...</p>
+                    </div>
+                  </div>
+                )}
+                {/* Auto-scroll anchor */}
+                <div ref={chatEndRef} />
+              </div>
+              
+              {/* Chat Input - FIXED AT BOTTOM */}
+              <div className="shrink-0 p-4 border-t border-slate-800 bg-slate-900/50 relative">
+                {/* Mention Picker Dropdown */}
+                {showMentionPicker && (
+                  <div className="absolute bottom-full left-4 right-4 mb-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl max-h-64 overflow-y-auto z-50">
+                    <div className="p-2 border-b border-slate-700">
+                      <p className="text-xs text-slate-400 font-mono uppercase">Select an agent to mention</p>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      {Object.entries(assignments).map(([nodeId, assignment]) => {
+                        const agent = assignment?.customAgent || assignment?.expert;
+                        if (!agent) return null;
+                        const node = structure.nodes.find(n => n.id === nodeId);
+                        return (
+                          <button
+                            key={nodeId}
+                            onClick={() => {
+                              setTeamChatInput(prev => prev + `@${agent.name} `);
+                              setShowMentionPicker(false);
+                            }}
+                            className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/50 transition-colors text-left"
+                          >
+                            <img src={agent.avatarUrl} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                            <div>
+                              <p className="text-white text-sm font-medium">{agent.name}</p>
+                              <p className="text-slate-500 text-xs">{node?.role || 'Team Member'}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowMentionPicker(!showMentionPicker)}
+                    className={`px-3 py-3 rounded-xl border transition-all ${
+                      showMentionPicker 
+                        ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-400' 
+                        : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600'
+                    }`}
+                    title="Mention an agent"
+                  >
+                    <span className="text-lg font-bold">@</span>
+                  </button>
+                  <input
+                    type="text"
+                    value={teamChatInput}
+                    onChange={(e) => setTeamChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleTeamChatSend()}
+                    placeholder="Ask your team anything..."
+                    className="flex-1 px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+                  />
+                  <button
+                    onClick={handleTeamChatSend}
+                    disabled={!teamChatInput.trim() || sendingTeamChat}
+                    className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-purple-600 text-white text-sm font-bold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:from-cyan-500 hover:to-purple-500 transition-all"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Right Sidebar - Expert Bench */}
-        <aside className="w-80 border-l border-slate-800 bg-slate-900/50 flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+        {/* Right Sidebar - Expert Bench - STICKY */}
+        <aside className="w-80 border-l border-slate-800 bg-slate-900/50 flex flex-col h-[calc(100vh-4rem)] overflow-y-auto sticky top-16">
           <div className="p-4 border-b border-slate-800">
             <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest">Your Expert Bench</h3>
             <p className="text-slate-600 text-[10px] mt-1">Drag or click nodes to assign</p>
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {experts.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-slate-500 text-sm">No experts yet</p>
-                <button 
-                  onClick={onGoHome}
-                  className="mt-3 text-cyan-400 text-xs font-mono uppercase tracking-wider hover:text-cyan-300"
-                >
-                  Create Expert →
-                </button>
-              </div>
-            ) : (
-              experts.map((expert) => {
+            {(() => {
+              // Filter experts to only show those belonging to this team or with no team (global)
+              const teamExperts = experts.filter(e => !e.teamId || e.teamId === teamId);
+              
+              if (teamExperts.length === 0) {
+                return (
+                  <div className="text-center py-8">
+                    <p className="text-slate-500 text-sm">No agents for this team yet</p>
+                    <p className="text-slate-600 text-xs mt-1">Generate agents using the org chart</p>
+                  </div>
+                );
+              }
+              
+              // Sort by hierarchy: CEO first, then VPs, then others
+              return teamExperts
+                .sort((a, b) => {
+                  const roleOrder = (role?: string) => {
+                    if (!role) return 999;
+                    const r = role.toLowerCase();
+                    if (r.includes('ceo') || r.includes('chief executive')) return 0;
+                    if (r.includes('cto') || r.includes('cfo') || r.includes('coo')) return 1;
+                    if (r.includes('vp') || r.includes('vice president')) return 2;
+                    if (r.includes('director')) return 3;
+                    if (r.includes('manager') || r.includes('lead')) return 4;
+                    return 5;
+                  };
+                  return roleOrder(a.role) - roleOrder(b.role);
+                })
+                .map((expert) => {
                 const isAssigned = Object.values(assignments).some(
-                  (a) => a?.expert?.id === expert.id
+                  (a) => a?.expert?.id === expert.id || a?.customAgent?.id === expert.id
                 );
                 const category = inferCategory(expert);
                 const colors = CATEGORY_COLORS[category];
@@ -945,31 +1761,55 @@ Respond as ${agent.name} in character, being helpful and specific to the role an
                       setHoveredExpert(expert);
                     }}
                     onMouseLeave={() => setHoveredExpert(null)}
-                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                    className={`group relative flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                       isAssigned 
-                        ? 'bg-slate-800/30 border-slate-700/50 opacity-50' 
-                        : 'bg-slate-800/50 border-slate-700 hover:border-cyan-500/50 cursor-pointer'
+                        ? 'bg-slate-800/50 border-green-500/30 hover:border-green-500/50' 
+                        : 'bg-slate-800/50 border-slate-700 hover:border-cyan-500/50'
                     }`}
                   >
+                    {/* Role label in top right */}
+                    {expert.role && (
+                      <span className="absolute top-1.5 right-2 text-[8px] font-mono text-slate-500 uppercase tracking-wider truncate max-w-[100px]">
+                        {expert.role.replace(/^(Chief |VP of |Director of |Head of )/, '').slice(0, 15)}
+                      </span>
+                    )}
                     <img
                       src={expert.avatarUrl}
                       alt={expert.name}
                       className="w-10 h-10 rounded-lg object-cover border border-slate-600"
                     />
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 mt-2">
                       <p className="text-white text-sm font-medium truncate">{expert.name}</p>
                       <p className="text-slate-500 text-[10px] truncate uppercase font-mono">{expert.essence}</p>
                       <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${colors.bg} ${colors.text}`}>
                         {category}
                       </span>
                     </div>
-                    {isAssigned && (
-                      <span className="text-green-500 text-xs">✓</span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {isAssigned && (
+                        <span className="text-green-500 text-xs">✓</span>
+                      )}
+                      {onDeleteExpert && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Delete ${expert.name}?`)) {
+                              onDeleteExpert(expert.id);
+                            }
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                          title="Delete agent"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
           
           <div className="p-4 border-t border-slate-800 space-y-3">

@@ -6,10 +6,8 @@ interface LegendProfileProps {
   legend: Legend;
   onBack: () => void;
   onDraft?: (legend: Legend) => void;
-  onChat?: (legend: Legend) => void;
+  onChat?: (legend: Legend, initialMessage?: string) => void;
 }
-
-type Tab = 'overview' | 'mental-models' | 'decisions' | 'advise';
 
 const LegendProfile: React.FC<LegendProfileProps> = ({
   legend,
@@ -17,390 +15,241 @@ const LegendProfile: React.FC<LegendProfileProps> = ({
   onDraft,
   onChat,
 }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [quickQuestion, setQuickQuestion] = useState('');
+  const [hoveredSection, setHoveredSection] = useState<string | null>(null);
 
-  const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'overview', label: 'Overview', icon: '📋' },
-    { id: 'mental-models', label: 'Mental Models', icon: '🧠' },
-    { id: 'decisions', label: 'Famous Decisions', icon: '🏆' },
-    { id: 'advise', label: "How They'd Advise", icon: '💬' },
-  ];
+  const handleChatStart = () => {
+    if (onChat) {
+      onChat(legend, quickQuestion);
+    }
+  };
+
+  const handleAskAbout = (topic: string) => {
+    if (onChat) {
+      onChat(legend, `Tell me more about your ${topic.toLowerCase()}`);
+    }
+  };
+
+  // Reusable section wrapper with hover "Ask about this" overlay
+  const SectionWithAsk: React.FC<{ id: string; topic: string; children: React.ReactNode }> = ({ id, topic, children }) => (
+    <section 
+      className="relative group/section"
+      onMouseEnter={() => setHoveredSection(id)}
+      onMouseLeave={() => setHoveredSection(null)}
+    >
+      {/* Hover overlay */}
+      <div className={`absolute -top-2 -right-2 z-20 transition-all duration-200 ${hoveredSection === id ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'}`}>
+        <button
+          onClick={() => handleAskAbout(topic)}
+          className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-sm font-bold rounded-full shadow-lg shadow-cyan-900/40 flex items-center gap-2 transition-all hover:scale-105"
+        >
+          <span>💬</span> Ask {legend.name.split(' ')[0]} about this
+        </button>
+      </div>
+      {children}
+    </section>
+  );
+
+  const primaryCategory = legend.categories[0];
+  const catInfo = LEGEND_CATEGORIES[primaryCategory];
 
   return (
-    <div className="min-h-screen bg-[#020617]">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-[#0f172a]/95 backdrop-blur-md border-b border-slate-800">
-        <div className="max-w-5xl mx-auto px-6 py-4">
-          <button 
-            onClick={onBack}
-            className="text-slate-400 hover:text-white transition-colors flex items-center gap-2"
-          >
-            ← Back to Legends
-          </button>
+    <div className="min-h-screen bg-[#020617] flex flex-col lg:flex-row animate-in fade-in duration-500">
+      
+      {/* LEFT COLUMN: Immersive Hero & Identity (Sticky on Desktop) */}
+      <aside className="lg:w-[450px] lg:h-screen lg:sticky lg:top-0 relative h-[60vh] flex-shrink-0 bg-slate-900 overflow-hidden group">
+        {/* Full Background Image */}
+        <div className="absolute inset-0">
+          <img 
+            src={legend.photo} 
+            alt={legend.name}
+            className="w-full h-full object-cover object-top transition-transform duration-1000 group-hover:scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-[#020617]/40 to-transparent opacity-90"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent"></div>
         </div>
-      </header>
 
-      {/* Profile Header */}
-      <div className="bg-gradient-to-b from-[#0f172a] to-[#020617] border-b border-slate-800">
-        <div className="max-w-5xl mx-auto px-6 py-8">
-          <div className="flex flex-col md:flex-row gap-8 items-start">
-            {/* Photo */}
-            <div className="relative">
-              <div className="w-40 h-40 rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-lg shadow-amber-500/20">
-                {legend.photo ? (
-                  <img 
-                    src={legend.photo} 
-                    alt={legend.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center text-white text-4xl font-bold">
-                    {legend.name.split(' ').map(n => n[0]).join('')}
-                  </div>
-                )}
-              </div>
-              <div className="absolute -top-2 -right-2 bg-amber-500 text-black px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
-                <span>⭐</span> LEGEND
+        {/* Back Button (Absolute Top Left) */}
+        <button 
+          onClick={onBack}
+          className="absolute top-6 left-6 z-20 px-4 py-2 bg-black/40 backdrop-blur-md border border-white/10 rounded-full text-white/80 hover:text-white hover:bg-black/60 transition-all text-sm font-medium flex items-center gap-2"
+        >
+          <span>←</span> Back
+        </button>
+
+        {/* Identity Content (Bottom Aligned) */}
+        <div className="absolute inset-x-0 bottom-0 p-8 z-10 flex flex-col gap-6">
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="px-3 py-1 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-xs font-bold text-white uppercase tracking-wider shadow-lg">
+                {catInfo?.emoji} {catInfo?.label || primaryCategory}
+              </span>
+              <div className="flex gap-1">
+                {[1,2,3,4,5].map(i => <span key={i} className="text-amber-400 text-xs">★</span>)}
               </div>
             </div>
-
-            {/* Info */}
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-white">{legend.name}</h1>
-              <p className="text-cyan-400 text-lg italic mt-1">"{legend.title}"</p>
-              
-              {/* Categories */}
-              <div className="flex flex-wrap gap-2 mt-4">
-                {legend.categories.map((cat) => {
-                  const catInfo = LEGEND_CATEGORIES[cat];
-                  return (
-                    <span 
-                      key={cat}
-                      className="px-3 py-1 bg-slate-800 text-slate-300 text-sm rounded-full flex items-center gap-1.5"
-                    >
-                      <span>{catInfo.emoji}</span>
-                      <span className="capitalize">{cat}</span>
-                    </span>
-                  );
-                })}
-              </div>
-
-              {/* Quote */}
-              {(legend.identity?.quote || legend.quote) && (
-                <blockquote className="mt-6 pl-4 border-l-4 border-cyan-500 bg-slate-900/50 p-4 rounded-r-lg">
-                  <p className="text-slate-300 italic leading-relaxed">"{legend.identity?.quote || legend.quote}"</p>
-                </blockquote>
-              )}
-            </div>
+            
+            <h1 className="text-5xl lg:text-6xl font-black text-white leading-[0.9] tracking-tight drop-shadow-2xl mb-2">
+              {legend.name}
+            </h1>
+            <p className="text-xl text-cyan-400 font-medium italic drop-shadow-md border-l-4 border-cyan-500 pl-4 py-1">
+              {legend.title}
+            </p>
           </div>
-        </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="sticky top-[73px] z-30 bg-[#0f172a] border-b border-slate-800">
-        <div className="max-w-5xl mx-auto px-6">
-          <div className="flex gap-1">
-            {tabs.map((tab) => (
+          {/* Key Actions in Sidebar */}
+          <div className="flex gap-3 pt-4 border-t border-white/10">
+            {onDraft && (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-3 text-sm font-medium transition-all border-b-2 ${
-                  activeTab === tab.id
-                    ? 'text-cyan-400 border-cyan-400'
-                    : 'text-slate-400 border-transparent hover:text-white'
-                }`}
+                onClick={() => onDraft(legend)}
+                className="flex-1 py-3 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 rounded-xl text-white font-bold transition-all flex items-center justify-center gap-2 group/btn"
               >
-                <span className="mr-1.5">{tab.icon}</span>
-                {tab.label}
+                <span className="group-hover/btn:scale-110 transition-transform">🤝</span> 
+                Draft to Team
               </button>
-            ))}
+            )}
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* Tab Content */}
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* Overview Tab */}
-        {activeTab === 'overview' && (
-          <div className="space-y-8">
-            {/* Core Philosophy / Core Beliefs */}
-            <section>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                <span className="text-purple-400">⚡</span> CORE PHILOSOPHY
-              </h2>
-              <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6">
-                <ul className="space-y-3">
-                  {(legend.worldview?.coreBeliefs || legend.overview?.corePhilosophy || []).map((belief, i) => (
-                    <li key={i} className="flex items-start gap-3 text-slate-300">
-                      <span className="text-cyan-400 mt-1">•</span>
-                      <span>{belief}</span>
-                    </li>
-                  ))}
-                </ul>
+      {/* RIGHT COLUMN: Scrollable Content */}
+      <main className="flex-1 relative">
+        {/* Floating Chat Input (Sticky Bottom) */}
+        <div className="fixed bottom-8 left-0 lg:left-[450px] right-0 z-50 flex justify-center px-4 pointer-events-none">
+          <div className="w-full max-w-3xl pointer-events-auto">
+            <div className="bg-[#0f172a]/80 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-2xl shadow-black/50 ring-1 ring-white/5 flex gap-2 transition-all focus-within:ring-cyan-500/50 focus-within:bg-[#0f172a]/95 transform hover:scale-[1.01]">
+              <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold shadow-lg">
+                AI
               </div>
-            </section>
-
-            {/* Known For / Deep Mastery */}
-            <section>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                <span className="text-cyan-400">📚</span> KNOWN FOR
-              </h2>
-              <div className="flex flex-wrap gap-2">
-                {(legend.overview?.knownFor || legend.expertise?.deepMastery || []).map((item, i) => (
-                  <span 
-                    key={i}
-                    className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg border border-slate-700 hover:border-cyan-500/50 transition-colors cursor-default"
-                  >
-                    {item}
-                  </span>
-                ))}
-              </div>
-            </section>
-
-            {/* Key Influences */}
-            <section>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                <span className="text-amber-400">🎯</span> KEY INFLUENCES
-              </h2>
-              <p className="text-slate-400">
-                {(legend.worldview?.influences || legend.overview?.influences || []).join(' • ')}
-              </p>
-            </section>
-
-            {/* What They Find Beautiful - NEW */}
-            {legend.worldview?.whatTheyFindBeautiful && (
-              <section>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                  <span className="text-emerald-400">✨</span> WHAT EXCELLENCE LOOKS LIKE
-                </h2>
-                <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6">
-                  <p className="text-slate-300 leading-relaxed">{legend.worldview.whatTheyFindBeautiful}</p>
-                </div>
-              </section>
-            )}
-
-            {/* What Makes Them Cringe - NEW */}
-            {legend.worldview?.whatMakesThemCringe && (
-              <section>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                  <span className="text-red-400">😤</span> COMMON MISTAKES THEY HATE
-                </h2>
-                <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6">
-                  <p className="text-slate-300 leading-relaxed">{legend.worldview.whatMakesThemCringe}</p>
-                </div>
-              </section>
-            )}
-
-            {/* Personality Quirks - NEW */}
-            {legend.personality?.quirks && legend.personality.quirks.length > 0 && (
-              <section>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                  <span className="text-purple-400">🎭</span> PERSONALITY QUIRKS
-                </h2>
-                <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6">
-                  <ul className="space-y-3">
-                    {legend.personality.quirks.map((quirk, i) => (
-                      <li key={i} className="flex items-start gap-3 text-slate-300">
-                        <span className="text-purple-400 mt-1">•</span>
-                        <span>{quirk}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </section>
-            )}
+              <input 
+                type="text"
+                value={quickQuestion}
+                onChange={(e) => setQuickQuestion(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleChatStart()}
+                placeholder={`Ask ${legend.name.split(' ')[0]} for advice...`}
+                className="flex-1 bg-transparent border-none text-white placeholder-slate-400 px-2 focus:ring-0 text-lg"
+                autoFocus
+              />
+              <button 
+                onClick={handleChatStart}
+                className="px-5 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-cyan-900/30"
+              >
+                Chat
+              </button>
+            </div>
           </div>
-        )}
+        </div>
 
-        {/* Mental Models Tab */}
-        {activeTab === 'mental-models' && (
-          <div className="space-y-6">
-            <div className="mb-6">
-              <h2 className="text-lg font-bold text-white">🧠 MENTAL MODELS</h2>
-              <p className="text-slate-500 text-sm mt-1">How {legend.name.split(' ')[0]} approaches problems</p>
-              {legend.thinkingStyle?.howTheySeeProblems && (
-                <div className="mt-4 bg-slate-900/50 rounded-xl border border-slate-800 p-4">
-                  <p className="text-slate-400 text-sm italic">"{legend.thinkingStyle.howTheySeeProblems}"</p>
-                </div>
-              )}
+        <div className="p-6 lg:p-12 pb-32 space-y-16 max-w-4xl mx-auto">
+          
+          {/* Quote Section */}
+          {(legend.identity?.quote || legend.quote) && (
+            <section className="relative">
+              <span className="absolute -top-6 -left-4 text-8xl text-slate-800 font-serif opacity-50">“</span>
+              <h3 className="text-2xl lg:text-3xl font-medium text-slate-200 leading-relaxed italic relative z-10">
+                {legend.identity?.quote || legend.quote}
+              </h3>
+            </section>
+          )}
+
+          {/* Core Philosophy / Beliefs */}
+          <SectionWithAsk id="philosophy" topic="Core Philosophy">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-purple-500/10 rounded-lg">
+                <span className="text-2xl">⚡</span>
+              </div>
+              <h2 className="text-2xl font-bold text-white tracking-wide">CORE PHILOSOPHY</h2>
             </div>
             
-            {(legend.thinkingStyle?.mentalModels || legend.mentalModels || []).map((model, i) => (
-              <div 
-                key={i}
-                className="bg-slate-900/50 rounded-xl border border-slate-800 p-6 hover:border-slate-700 transition-colors"
-              >
-                <h3 className="text-white font-bold text-lg uppercase tracking-wide mb-3">
-                  {model.name}
-                </h3>
-                <p className="text-slate-300 leading-relaxed mb-4">
-                  {model.description}
-                </p>
-                {model.application && (
-                  <div className="mb-4 pl-4 border-l-2 border-emerald-500/50">
-                    <p className="text-xs font-mono text-emerald-500 uppercase tracking-wider mb-1">How They Apply It</p>
-                    <p className="text-slate-400 text-sm">{model.application}</p>
-                  </div>
-                )}
-                {model.quote && (
-                  <blockquote className="pl-4 border-l-2 border-cyan-500/50 text-slate-400 italic text-sm">
-                    "{model.quote}"
-                  </blockquote>
-                )}
-              </div>
-            ))}
-
-            {/* Reasoning Patterns - NEW */}
-            {legend.thinkingStyle?.reasoningPatterns && (
-              <div className="bg-gradient-to-br from-purple-900/20 to-cyan-900/20 rounded-xl border border-purple-500/30 p-6">
-                <h3 className="text-white font-bold text-lg uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <span>🎯</span> REASONING PATTERNS
-                </h3>
-                <p className="text-slate-300 leading-relaxed">{legend.thinkingStyle.reasoningPatterns}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Famous Decisions Tab */}
-        {activeTab === 'decisions' && (
-          <div className="space-y-6">
-            <div className="mb-6">
-              <h2 className="text-lg font-bold text-white">🏆 FAMOUS DECISIONS</h2>
-              <p className="text-slate-500 text-sm mt-1">Key moments that defined the {legend.name.split(' ')[1] || legend.name} approach</p>
-            </div>
-            
-            {(legend.famousDecisions || []).length === 0 ? (
-              <div className="text-center py-8 text-slate-500">
-                No famous decisions documented yet.
-              </div>
-            ) : (legend.famousDecisions || []).map((decision, i) => (
-              <div 
-                key={i}
-                className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden"
-              >
-                <div className="bg-slate-800/50 px-6 py-4 flex items-center justify-between">
-                  <h3 className="text-white font-bold uppercase tracking-wide">
-                    {decision.title}
-                  </h3>
-                  {decision.year && (
-                    <span className="text-slate-500 text-sm font-mono">{decision.year}</span>
-                  )}
-                </div>
-                
-                <div className="p-6 space-y-4">
-                  <div>
-                    <p className="text-xs font-mono text-slate-500 uppercase tracking-wider mb-1">Situation</p>
-                    <p className="text-slate-300">{decision.situation}</p>
-                  </div>
-                  
-                  <div>
-                    <p className="text-xs font-mono text-slate-500 uppercase tracking-wider mb-1">Decision</p>
-                    <p className="text-slate-300">{decision.decision}</p>
-                  </div>
-                  
-                  <div>
-                    <p className="text-xs font-mono text-cyan-500 uppercase tracking-wider mb-1">{legend.name.split(' ')[1] || legend.name} Logic</p>
-                    <p className="text-cyan-300/80 italic">"{decision.logic}"</p>
-                  </div>
-                  
-                  <div>
-                    <p className="text-xs font-mono text-emerald-500 uppercase tracking-wider mb-1">Outcome</p>
-                    <p className="text-emerald-300/80">{decision.outcome}</p>
-                  </div>
-                </div>
-
-                {onChat && (
-                  <div className="px-6 py-3 border-t border-slate-800 flex justify-end">
-                    <button 
-                      onClick={() => onChat(legend)}
-                      className="text-cyan-400 text-sm hover:text-cyan-300 transition-colors"
-                    >
-                      Discuss this decision →
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* How They'd Advise Tab */}
-        {activeTab === 'advise' && (
-          <div className="space-y-6">
-            <div className="mb-6">
-              <h2 className="text-lg font-bold text-white">💬 HOW {(legend.name.split(' ')[1] || legend.name).toUpperCase()} WOULD ADVISE</h2>
-              <p className="text-slate-500 text-sm mt-1">Get a sense of how {legend.name.split(' ')[0]} thinks by exploring sample scenarios</p>
-            </div>
-            
-            {(legend.sampleQuestions || []).map((sq, i) => (
-              <div 
-                key={i}
-                className="bg-slate-900/50 rounded-xl border border-slate-800 p-6 hover:border-slate-700 transition-colors"
-              >
-                <p className="text-white font-medium mb-4">
-                  "{sq.question}"
-                </p>
-                <div className="pl-4 border-l-2 border-cyan-500/30">
-                  <p className="text-slate-400 leading-relaxed">
-                    {sq.previewResponse}
+            <div className="grid gap-4">
+              {(legend.worldview?.coreBeliefs || legend.overview?.corePhilosophy || []).map((belief, i) => (
+                <div key={i} className="group flex gap-4 p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-purple-500/30 transition-all">
+                  <span className="text-purple-400 font-bold text-lg mt-0.5">0{i + 1}</span>
+                  <p className="text-lg text-slate-300 leading-relaxed group-hover:text-slate-200 transition-colors">
+                    {belief}
                   </p>
                 </div>
-                {onChat && (
-                  <button 
-                    onClick={() => onChat(legend)}
-                    className="mt-4 text-cyan-400 text-sm hover:text-cyan-300 transition-colors"
-                  >
-                    Continue this chat →
-                  </button>
-                )}
-              </div>
-            ))}
-
-            {/* Ask Your Own */}
-            <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-6">
-              <h3 className="text-white font-medium flex items-center gap-2 mb-4">
-                <span>✍️</span> ASK YOUR OWN QUESTION
-              </h3>
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  placeholder={`What would you like to ask ${legend.name.split(' ')[0]}?`}
-                  className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
-                />
-                <button 
-                  onClick={() => onChat && onChat(legend)}
-                  className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-purple-600 rounded-lg text-white font-medium hover:from-cyan-500 hover:to-purple-500 transition-all"
-                >
-                  Ask
-                </button>
-              </div>
+              ))}
             </div>
-          </div>
-        )}
-      </main>
+          </SectionWithAsk>
 
-      {/* Bottom Action Bar */}
-      <div className="sticky bottom-0 bg-[#0f172a]/95 backdrop-blur-md border-t border-slate-800">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex gap-4">
-          {onChat && (
-            <button
-              onClick={() => onChat(legend)}
-              className="flex-1 py-3 border border-slate-600 rounded-xl text-slate-300 font-medium hover:border-cyan-500 hover:text-cyan-400 transition-all flex items-center justify-center gap-2"
-            >
-              <span>💬</span> Chat with {legend.name.split(' ')[0]}
-            </button>
+          {/* Mental Models Grid */}
+          <SectionWithAsk id="mentalmodels" topic="Mental Models">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-cyan-500/10 rounded-lg">
+                <span className="text-2xl">🧠</span>
+              </div>
+              <h2 className="text-2xl font-bold text-white tracking-wide">MENTAL MODELS</h2>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              {(legend.thinkingStyle?.mentalModels || legend.mentalModels || []).map((model, i) => (
+                <div key={i} className="bg-gradient-to-br from-slate-900 to-slate-900/50 p-6 rounded-2xl border border-slate-800 hover:border-cyan-500/30 transition-all group">
+                  <h3 className="text-xl font-bold text-white mb-3 group-hover:text-cyan-400 transition-colors">
+                    {model.name}
+                  </h3>
+                  <p className="text-slate-400 leading-relaxed mb-4">
+                    {model.description}
+                  </p>
+                  {model.application && (
+                    <div className="text-sm text-cyan-200/60 font-mono pt-4 border-t border-slate-800">
+                      → {model.application}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </SectionWithAsk>
+
+          {/* Famous Decisions */}
+          {(legend.famousDecisions && legend.famousDecisions.length > 0) && (
+            <SectionWithAsk id="decisions" topic="Famous Decisions">
+               <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-amber-500/10 rounded-lg">
+                  <span className="text-2xl">🏆</span>
+                </div>
+                <h2 className="text-2xl font-bold text-white tracking-wide">FAMOUS DECISIONS</h2>
+              </div>
+
+              <div className="space-y-6">
+                {legend.famousDecisions.map((decision, i) => (
+                  <div key={i} className="bg-slate-900/30 rounded-2xl border border-slate-800 overflow-hidden">
+                    <div className="px-6 py-4 bg-slate-800/50 border-b border-slate-800 flex justify-between items-center">
+                      <h3 className="font-bold text-white">{decision.title}</h3>
+                      <span className="text-xs font-mono text-slate-500 bg-black/30 px-2 py-1 rounded">{decision.year}</span>
+                    </div>
+                    <div className="p-6 grid md:grid-cols-2 gap-8">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">The Situation</h4>
+                        <p className="text-slate-300">{decision.situation}</p>
+                      </div>
+                      <div className="relative">
+                        <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-amber-500/50 to-transparent"></div>
+                        <div className="pl-6">
+                          <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2">The Call</h4>
+                          <p className="text-white font-medium mb-2">{decision.decision}</p>
+                          <p className="text-sm text-slate-400 italic">"{decision.logic}"</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionWithAsk>
           )}
-          {onDraft && (
-            <button
-              onClick={() => onDraft(legend)}
-              className="flex-1 py-3 bg-gradient-to-r from-cyan-600 to-purple-600 rounded-xl text-white font-bold hover:from-cyan-500 hover:to-purple-500 transition-all shadow-lg shadow-cyan-900/30 flex items-center justify-center gap-2"
-            >
-              <span>➕</span> Draft to Your Team
-            </button>
-          )}
+
+          {/* Quick Stats / Expertise */}
+          <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+             {(legend.overview?.knownFor || legend.expertise?.deepMastery || []).map((item, i) => (
+                <div key={i} className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 text-center hover:bg-slate-800/50 transition-colors">
+                  <span className="text-cyan-400 text-lg block mb-1">◆</span>
+                  <span className="text-sm font-bold text-slate-300">{item}</span>
+                </div>
+             ))}
+          </section>
+
         </div>
-      </div>
+      </main>
     </div>
   );
 };

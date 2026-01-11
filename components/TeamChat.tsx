@@ -59,11 +59,12 @@ interface Message {
 interface TeamChatProps {
   experts: ExpertPersona[];
   activeAdvisor?: ExpertPersona | null;
+  initialMessage?: string;
   onClose: () => void;
   onBrowseLegends: () => void;
 }
 
-const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, onBrowseLegends }) => {
+const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, initialMessage, onClose, onBrowseLegends }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState<string[]>([]); // Array of advisor names currently typing
@@ -71,8 +72,21 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [showMentionDrawer, setShowMentionDrawer] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
+  const [hasSentInitial, setHasSentInitial] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Get unique departments from experts
+  const departments = ['all', ...Array.from(new Set(experts.map(e => {
+    const cat = inferCategory(e);
+    return cat;
+  })))];
+
+  // Filter experts by selected department
+  const departmentFilteredExperts = selectedDepartment === 'all' 
+    ? experts 
+    : experts.filter(e => inferCategory(e) === selectedDepartment);
 
   // Sort experts: Legends first, then others
   const sortedExperts = [...experts].sort((a, b) => {
@@ -128,6 +142,68 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  // Auto-send initial message when provided
+  useEffect(() => {
+    if (initialMessage && !hasSentInitial && activeAdvisor && experts.length > 0) {
+      setHasSentInitial(true);
+      // Small delay to ensure component is mounted
+      const timer = setTimeout(() => {
+        sendMessageProgrammatically(initialMessage);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [initialMessage, hasSentInitial, activeAdvisor, experts]);
+
+  // Programmatic message send (for initial message auto-send)
+  const sendMessageProgrammatically = async (messageText: string) => {
+    if (!messageText.trim()) return;
+
+    const newMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: messageText,
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, newMessage]);
+
+    // Use active advisor or first expert
+    const advisor = activeAdvisor || experts[0];
+    if (!advisor) return;
+
+    setIsTyping(prev => [...prev, advisor.name]);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: `User said: "${messageText}". 
+        Respond as ${advisor.name} (${advisor.essence || ''}). ${advisor.personality?.signatureExpressions ? `Use your signature expressions like: ${advisor.personality.signatureExpressions.join(', ')}.` : ''} 
+        Stay in character. ${advisor.coreBeliefs ? `Your core beliefs: ${advisor.coreBeliefs.join('. ')}.` : ''} Respond in Markdown.`,
+        config: {
+          systemInstruction: `You are ${advisor.name}, a member of an elite AI advisory board. You are direct, expert, and consistent with your persona.`,
+        }
+      });
+
+      const advisorMsg: Message = {
+        id: Math.random().toString(),
+        role: 'advisor',
+        advisorId: advisor.id,
+        advisorName: advisor.name,
+        advisorAvatar: advisor.avatarUrl,
+        isLegend: advisor.isLegend,
+        text: response.text || "I'm processing that...",
+        timestamp: new Date(),
+      };
+
+      setMessages(prev => [...prev, advisorMsg]);
+    } catch (err) {
+      console.error('Error generating response:', err);
+    } finally {
+      setIsTyping(prev => prev.filter(name => name !== advisor.name));
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
@@ -161,12 +237,12 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
       setIsTyping(prev => [...prev, advisor.name]);
       
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+        const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
         const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-2.0-flash',
           contents: `User said: "${userText}". Context of conversation: ${messages.slice(-5).map(m => m.text).join('\n')}. 
-          Respond as ${advisor.name} (${advisor.essence}). Use your signature expressions like: ${advisor.personality.signatureExpressions.join(', ')}. 
-          Stay in character. Your core beliefs: ${advisor.coreBeliefs.join('. ')}. Respond in Markdown.`,
+          Respond as ${advisor.name} (${advisor.essence || ''}). ${advisor.personality?.signatureExpressions ? `Use your signature expressions like: ${advisor.personality.signatureExpressions.join(', ')}.` : ''} 
+          Stay in character. ${advisor.coreBeliefs ? `Your core beliefs: ${advisor.coreBeliefs.join('. ')}.` : ''} Respond in Markdown.`,
           config: {
             systemInstruction: `You are ${advisor.name}, a member of an elite AI advisory board. You are direct, expert, and consistent with your persona.`,
           }
@@ -338,6 +414,31 @@ const TeamChat: React.FC<TeamChatProps> = ({ experts, activeAdvisor, onClose, on
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col relative">
         <div className="absolute inset-0 bg-grid opacity-5 pointer-events-none"></div>
+        
+        {/* Department Filter Bar */}
+        <div className="px-8 py-3 border-b border-slate-800/50 flex items-center gap-3 relative z-10 bg-[#020617]/80 backdrop-blur-sm">
+          <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Filter by Department:</span>
+          <div className="flex flex-wrap gap-2">
+            {departments.map(dept => (
+              <button
+                key={dept}
+                onClick={() => setSelectedDepartment(dept)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wide transition-all ${
+                  selectedDepartment === dept
+                    ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/30'
+                    : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700'
+                }`}
+              >
+                {dept === 'all' ? '👥 Full Team' : `${CATEGORY_COLORS[dept as ExpertCategory]?.text?.replace('text-', '').replace('-400', '') || ''} ${dept}`}
+              </button>
+            ))}
+          </div>
+          {selectedDepartment !== 'all' && (
+            <span className="ml-auto text-[10px] text-cyan-400 font-mono">
+              {departmentFilteredExperts.length} member{departmentFilteredExperts.length !== 1 ? 's' : ''} in {selectedDepartment}
+            </span>
+          )}
+        </div>
         
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-8 space-y-8 relative z-10">

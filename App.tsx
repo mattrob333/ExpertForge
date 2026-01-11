@@ -12,7 +12,9 @@ import TeamSetup from './components/TeamSetup';
 import TeamBuilder from './components/TeamBuilder';
 import LegendsLibrary from './components/LegendsLibrary';
 import LegendProfile from './components/LegendProfile';
+import EmergentChat from './components/EmergentChat';
 import { ExpertPersona, AppState, PersonalityDirection, TeamContext, TeamStructure, Legend } from './types';
+import { LEGENDS } from './data/legends';
 import { generateExpertPersona, generateTeamStructure } from './services/geminiService';
 import { supabase, signOut, onAuthStateChange } from './lib/supabase';
 import { getExperts, saveExpert, deleteExpert, getTeamContext, saveTeamContext, getTeamStructure, saveTeamStructure, clearLocalStorage, getAllTeams, deleteTeam, TeamContextWithId } from './services/storageService';
@@ -31,6 +33,19 @@ const App: React.FC = () => {
   const [allTeams, setAllTeams] = useState<TeamContextWithId[]>([]);
   const [selectedLegend, setSelectedLegend] = useState<Legend | null>(null);
   const [activeChatAdvisor, setActiveChatAdvisor] = useState<ExpertPersona | null>(null);
+  const [chatInitialMessage, setChatInitialMessage] = useState<string | null>(null);
+  const [customLegends, setCustomLegends] = useState<Legend[]>([]);
+  const [showOracleMode, setShowOracleMode] = useState(false);
+  
+  // Global team generation state - persists across navigation
+  const [teamGenerationState, setTeamGenerationState] = useState<{
+    isGenerating: boolean;
+    teamId: string | null;
+    teamName: string | null;
+    current: number;
+    total: number;
+    currentRole: string;
+  } | null>(null);
 
   // Auth state listener
   useEffect(() => {
@@ -236,11 +251,13 @@ const App: React.FC = () => {
     setState('home');
   }
 
-  const handleChatWithLegend = (legend: Legend) => {
+  const handleChatWithLegend = (legend: Legend, initialMessage?: string) => {
     // First draft the legend and get the expert persona
     const expertFromLegend = handleDraftLegend(legend);
     // Set this as the active chat advisor so they respond by default
     setActiveChatAdvisor(expertFromLegend);
+    // Store initial message if provided (for auto-sending in chat)
+    setChatInitialMessage(initialMessage || null);
     // Then go to chat
     setState('chat');
   }
@@ -266,6 +283,31 @@ const App: React.FC = () => {
     setState('landing');
   };
 
+  const handleSelectTeam = async (team: TeamContextWithId) => {
+    // Try to load saved structure from database first
+    setTeamContext(team);
+    setCurrentTeamId(team.id);
+    
+    try {
+      const savedStructure = await getTeamStructure(team.id, user?.id);
+      if (savedStructure) {
+        // Instant display - structure is already saved
+        setTeamStructure(savedStructure);
+        setState('structure-preview');
+      } else {
+        // No saved structure - need to generate
+        setState('loading');
+        const structure = await generateTeamStructure(team);
+        setTeamStructure(structure);
+        // Note: structure will be saved when user clicks "Save Team"
+        setState('structure-preview');
+      }
+    } catch (err) {
+      console.error('Failed to load team structure:', err);
+      setState('home');
+    }
+  };
+
   return (
     <div className="min-h-screen relative flex flex-col items-center justify-start">
       <Background />
@@ -287,6 +329,9 @@ const App: React.FC = () => {
             <TeamSetup 
               onSubmit={handleTeamSetupSubmit} 
               onCancel={() => setState('home')} 
+              teams={allTeams}
+              onSelectTeam={handleSelectTeam}
+              onOracleMode={() => setShowOracleMode(true)}
             />
           </div>
         )}
@@ -312,6 +357,8 @@ const App: React.FC = () => {
               await deleteExpert(expertId, user?.id);
               setExperts(prev => prev.filter(e => e.id !== expertId));
             }}
+            globalGenerationState={teamGenerationState}
+            onGenerationStateChange={(state) => setTeamGenerationState(state)}
           />
         )}
 
@@ -330,8 +377,9 @@ const App: React.FC = () => {
             <TeamChat 
               experts={activeChatAdvisor ? [...experts.filter(e => e.id !== activeChatAdvisor.id), activeChatAdvisor].filter((e, i, arr) => arr.findIndex(x => x.id === e.id) === i) : experts} 
               activeAdvisor={activeChatAdvisor}
-              onClose={() => { setActiveChatAdvisor(null); goDashboard(); }} 
-              onBrowseLegends={() => { setActiveChatAdvisor(null); goLegends(); }} 
+              initialMessage={chatInitialMessage || undefined}
+              onClose={() => { setActiveChatAdvisor(null); setChatInitialMessage(null); goDashboard(); }} 
+              onBrowseLegends={() => { setActiveChatAdvisor(null); setChatInitialMessage(null); goLegends(); }} 
             />
           </div>
         )}
@@ -355,31 +403,9 @@ const App: React.FC = () => {
               onCreateTeam={goTeamSetup}
               onGoLegends={goLegends}
               onSelectLegend={handleSelectLegend}
-              onSelectTeam={async (team: TeamContextWithId) => {
-                // Try to load saved structure from database first
-                setTeamContext(team);
-                setCurrentTeamId(team.id);
-                
-                try {
-                  const savedStructure = await getTeamStructure(team.id, user?.id);
-                  if (savedStructure) {
-                    // Instant display - structure is already saved
-                    setTeamStructure(savedStructure);
-                    setState('structure-preview');
-                  } else {
-                    // No saved structure - need to generate
-                    setState('loading');
-                    const structure = await generateTeamStructure(team);
-                    setTeamStructure(structure);
-                    // Note: structure will be saved when user clicks "Save Team"
-                    setState('structure-preview');
-                  }
-                } catch (err) {
-                  console.error('Failed to load team structure:', err);
-                  setState('home');
-                }
-              }}
+              onSelectTeam={handleSelectTeam}
               onGoChat={goChat}
+              onOracleMode={() => setShowOracleMode(true)}
               onLogout={handleLogout}
               onDeleteTeam={async (teamId: string) => {
                 try {
@@ -428,6 +454,8 @@ const App: React.FC = () => {
             onSelectLegend={handleSelectLegend}
             onDraftLegend={handleDraftLegend}
             onBack={goDashboard}
+            customLegends={customLegends}
+            onLegendGenerated={(legend) => setCustomLegends(prev => [...prev, legend])}
           />
         )}
 
@@ -467,6 +495,63 @@ const App: React.FC = () => {
             <button onClick={startAuthFlow} className="px-5 py-2 bg-cyan-500/10 border border-cyan-500/20 rounded-full text-[10px] font-mono text-cyan-400 uppercase tracking-widest hover:bg-cyan-500 hover:text-slate-900 transition-all font-bold">Launch App</button>
           </div>
         </nav>
+      )}
+
+      {/* Global Team Generation Indicator - persists across navigation */}
+      {teamGenerationState?.isGenerating && state !== 'structure-preview' && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-right duration-300">
+          <div 
+            onClick={() => {
+              // Navigate to the team that's being generated
+              if (teamGenerationState.teamId) {
+                const team = allTeams.find(t => t.id === teamGenerationState.teamId);
+                if (team && teamStructure) {
+                  setTeamContext(team);
+                  setCurrentTeamId(team.id);
+                  setState('structure-preview');
+                }
+              }
+            }}
+            className="bg-slate-900/95 backdrop-blur-xl border border-purple-500/30 rounded-2xl p-4 shadow-2xl shadow-purple-900/30 cursor-pointer hover:border-purple-500/50 transition-all group min-w-[280px]"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-cyan-600 rounded-xl flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+              </div>
+              <div className="flex-1">
+                <p className="text-white font-bold text-sm">Generating Team</p>
+                <p className="text-purple-400 text-xs">{teamGenerationState.teamName || 'AI Agents'}</p>
+              </div>
+              <span className="text-slate-500 text-xs group-hover:text-cyan-400 transition-colors">View →</span>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Progress</span>
+                <span className="text-cyan-400 font-mono">{teamGenerationState.current}/{teamGenerationState.total}</span>
+              </div>
+              <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-purple-500 to-cyan-500 transition-all duration-500"
+                  style={{ width: `${(teamGenerationState.current / teamGenerationState.total) * 100}%` }}
+                />
+              </div>
+              {teamGenerationState.currentRole && (
+                <p className="text-slate-500 text-[10px] truncate">
+                  Creating: <span className="text-slate-300">{teamGenerationState.currentRole}</span>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Oracle Mode from Home Dashboard */}
+      {showOracleMode && (
+        <EmergentChat
+          teamAgents={experts}
+          legendaryAdvisors={LEGENDS}
+          onClose={() => setShowOracleMode(false)}
+        />
       )}
     </div>
   );

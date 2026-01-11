@@ -22,13 +22,16 @@ ExpertForge transforms generic AI outputs into **domain-specific expert personas
 ### Key Capabilities
 
 - 🧠 **Expert Persona Generation** - Create detailed AI personas with beliefs, mental models, expertise tiers, and unique personalities
-- 👥 **Advisory Board Teams** - Generate 12-node hierarchical team structures tailored to your organization
+- 👥 **Dynamic Advisory Teams** - Generate 5-12 node hierarchical team structures that scale based on company size
 - 📊 **Interactive Org Charts** - React Flow visualization with role-based color coding and Dagre layout
 - 💬 **Team Chat with Cascading Responses** - Chat with all agents simultaneously; they @mention each other and respond in sequence
+- ⚡ **Oracle Mode (Emergent Chat)** - Structured intellectual discourse system that assembles optimal debate panels to produce novel insights through framework collision
+- 🏢 **Department Filtering** - Filter team chat by department (Marketing, Sales, Technology, etc.)
 - 🎯 **Team-Scoped Agents** - Agents are filtered by team, keeping workspaces separate
 - 📋 **Thread Synthesis** - AI-powered summarization of chat discussions into actionable reports
 - 🏆 **Legendary Business Minds** - Draft cognitive templates of Bezos, Jobs, Musk, Buffett, and more
 - 🔗 **URL Scraping** - Import company context by scraping website content with Google Search grounding
+- 🌟 **Famous Figure Detection** - Automatically detects real-world famous people and fetches their actual photos
 - 🎨 **Cyberpunk UI** - Dark theme with cyan/purple glow accents and glassmorphism effects
 
 ---
@@ -118,6 +121,22 @@ Click any node in the org chart to open the Role Workspace:
 - **Right Panel**: Knowledge sources and quick actions
 - **Persistence**: Assignments save automatically to localStorage
 
+### Oracle Mode (Emergent Chat)
+
+A structured intellectual discourse system that transforms how teams make decisions:
+
+- **Question Analysis**: AI analyzes your question to identify domains, tensions, and cognitive needs
+- **Panel Selection**: Automatically assembles optimal debate panel from team agents + legendary advisors
+- **Stance Assignment**: Assigns roles (Advocate, Skeptic, Devil's Advocate, Synthesizer) to ensure productive friction
+- **Cognitive Diversity**: Ensures Sternberg's Triarchic styles (Analytical, Creative, Practical) are represented
+- **Structured Discourse Phases**:
+  1. Position Statements - Each expert shares their stance
+  2. Directed Challenges - Experts challenge each other directly
+  3. Red Team Intervention - Challenge shared assumptions
+  4. Synthesis - Integration of perspectives
+  5. Emergence Detection - Identify novel insights
+- **Emergence Report**: Detailed analysis of whether genuine intellectual emergence occurred
+
 ### Legends Library
 
 Pre-built cognitive templates based on documented thinking patterns:
@@ -152,11 +171,14 @@ ExpertForge/
 │   ├── AuthPage.tsx         # Login/signup UI
 │   ├── HomeDashboard.tsx    # Main dashboard with experts & teams
 │   ├── ExpertCard.tsx       # Detailed persona dossier view
+│   ├── EmergentChat.tsx     # Oracle Mode - intellectual emergence system
 │   ├── LandingPage.tsx      # Marketing page with pricing
 │   ├── LegendCard.tsx       # Legend persona cards
+│   ├── LegendProfile.tsx    # Detailed legend profile view
 │   ├── TeamBuilder.tsx      # Org chart + Role Workspace modal
 │   ├── TeamChat.tsx         # Multi-agent chat interface
-│   ├── TeamSetup.tsx        # Team configuration wizard
+│   ├── TeamSetup.tsx        # Team configuration wizard (with Coming Soon overlays)
+│   ├── UnifiedProfileCard.tsx # Unified card for personas & legends (full/compact/mini)
 │   └── PricingSection.tsx   # Subscription tiers
 ├── data/
 │   └── legends.ts           # Pre-built legendary personas
@@ -166,13 +188,14 @@ ExpertForge/
 │   └── layoutOrgChart.ts    # Dagre layout helpers
 ├── services/
 │   ├── geminiService.ts     # AI generation (personas, teams, scraping)
+│   ├── discourseService.ts  # Panel selection, stance assignment, emergence detection
 │   └── storageService.ts    # Data persistence layer
 ├── supabase/
 │   ├── schema.sql           # Main database schema
 │   └── migrations/          # Schema migrations
 ├── public/
 │   └── images/              # Legend avatar photos
-├── types.ts                 # TypeScript interfaces
+├── types.ts                 # TypeScript interfaces (includes discourse types)
 ├── App.tsx                  # Main app with state machine
 └── index.html               # Entry point
 ```
@@ -191,6 +214,19 @@ ExpertForge/
 | `scrapeUrlContent(url)` | Extract business context from URL |
 | `generateResourceRecommendations(persona)` | Get resource suggestions |
 | `autoPopulateResource(resource, persona)` | Fetch resource content |
+
+### Discourse Service Functions
+
+| Function | Description |
+|----------|-------------|
+| `analyzeQuestion(question, context?)` | Analyze question for domains, tensions, cognitive needs |
+| `selectDebatePanel(question, agents, legends, context?, maxSize?)` | Select optimal debate panel |
+| `generatePositionStatement(expert, stance, question, context?)` | Generate expert's initial position |
+| `generateChallenge(challenger, stance, target, position, question)` | Generate directed challenge |
+| `generateRedTeamIntervention(history, question)` | Generate red team intervention |
+| `attemptSynthesis(history, panel, question)` | Attempt synthesis of discourse |
+| `detectEmergence(synthesis, history, panel, question)` | Evaluate emergence |
+| `legendToExpert(legend)` | Convert Legend to ExpertPersona format |
 
 ### Storage Service Functions
 
@@ -257,11 +293,20 @@ npx tsc --noEmit
 
 - [x] ~~Team chat with @mentions across all agents~~ ✅ Implemented
 - [x] ~~Thread synthesis/export~~ ✅ Implemented
+- [x] ~~Oracle Mode - Intellectual Emergence System~~ ✅ Implemented
+- [x] ~~Cognitive style & orientation for agents~~ ✅ Implemented
+- [x] ~~NAICS standardized job roles~~ ✅ Implemented
+- [x] ~~Department filtering in team chat~~ ✅ Implemented
+- [x] ~~Dynamic org chart scaling (5-12 nodes)~~ ✅ Implemented
+- [x] ~~Famous figure detection with real avatars~~ ✅ Implemented
+- [x] ~~Unified profile card component~~ ✅ Implemented
 - [ ] Sub-agent support for specialized role assistants
 - [ ] Export team configurations as JSON
 - [ ] Role analytics and performance tracking
 - [ ] Voice chat with agents
 - [ ] Mobile responsive improvements
+- [ ] Discourse history persistence
+- [ ] Cross-team debates
 
 ---
 

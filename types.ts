@@ -43,6 +43,15 @@ export type ExpertCategory =
   | 'leadership'
   | 'general';
 
+// Cognitive styles based on Sternberg's Triarchic Theory
+export type CognitiveStyle = 'analytical' | 'creative' | 'practical';
+
+// Natural orientation in discourse
+export type NaturalOrientation = 'advocate' | 'skeptical' | 'neutral' | 'contrarian' | 'synthesizer';
+
+// Stance assigned during structured discourse
+export type DiscourseStance = 'advocate' | 'skeptic' | 'neutral' | 'devils_advocate' | 'synthesizer';
+
 export interface ExpertPersona {
   id: string;
   name: string;
@@ -51,8 +60,11 @@ export interface ExpertPersona {
   introduction: string;
   role?: string; // e.g., 'Strategy', 'Product', etc.
   category?: ExpertCategory; // Department/expertise category
+  department?: string; // Org chart department: Executive, Sales, Marketing, Operations, Finance, Technology, Human Resources, Strategy, Product, Legal
   teamId?: string; // Associated team (null = available to all teams)
   isLegend?: boolean;
+  cognitive_style?: CognitiveStyle; // Sternberg's triarchic: analytical, creative, practical
+  natural_orientation?: NaturalOrientation; // Default stance in debates
   stats: {
     coreSkills: number;
     mentalModels: number;
@@ -507,4 +519,93 @@ export interface CreateRoleAgentRequest {
   roleContext?: string;
   roleResponsibilities?: string[];
   backupLegendIds?: string[];
+}
+
+// ===== EMERGENT CHAT / INTELLECTUAL EMERGENCE SYSTEM =====
+
+// Question analysis result from analyzing user's discourse question
+export interface QuestionAnalysis {
+  type: 'strategic' | 'tactical' | 'operational' | 'philosophical';
+  domains: string[];
+  tensions: string[];
+  cognitiveNeeds: {
+    analytical: boolean;
+    creative: boolean;
+    practical: boolean;
+  };
+  hiddenAssumptions: string[];
+}
+
+// Panel member with assigned stance for discourse
+export interface DiscoursePanel {
+  agentId: string;
+  agent: ExpertPersona;
+  assignedStance: DiscourseStance;
+  rationale?: string;
+}
+
+// Message phases in structured discourse
+export type DiscoursePhase = 
+  | 'position'      // Initial position statements
+  | 'collision'     // Collision mapping
+  | 'challenge'     // Directed challenges
+  | 'response'      // Responses to challenges
+  | 'red_team'      // Red team interventions
+  | 'synthesis'     // Synthesis attempts
+  | 'emergence';    // Final emergence detection
+
+// Individual message in discourse
+export interface DiscourseMessage {
+  id: string;
+  phase: DiscoursePhase;
+  agentId?: string;
+  agentName: string;
+  agentAvatar?: string;
+  stance?: DiscourseStance;
+  content: string;
+  isSystem?: boolean; // Conductor messages
+  timestamp: Date;
+  metadata?: {
+    confidence?: number;
+    keyAssumptions?: string[];
+    targetAgent?: string; // For directed challenges
+  };
+}
+
+// Emergence detection result
+export interface EmergenceEvaluation {
+  noveltyScore: number; // 1-10
+  isGenuineEmergence: boolean;
+  singleExpertDerivable: boolean;
+  keyCollision: string;
+  attribution: Record<string, string>;
+  verdict: 'genuine_emergence' | 'obvious_combination' | 'needs_development';
+}
+
+// Full emergence report
+export interface EmergenceReport {
+  discourseId: string;
+  question: string;
+  synthesis: string;
+  evaluation: EmergenceEvaluation;
+  journey: DiscourseMessage[];
+  panel: DiscoursePanel[];
+  uncertainties: string[];
+  nextSteps: string[];
+  createdAt: Date;
+}
+
+// Discourse session state
+export interface DiscourseSession {
+  id: string;
+  teamId?: string;
+  question: string;
+  questionAnalysis: QuestionAnalysis;
+  panel: DiscoursePanel[];
+  messages: DiscourseMessage[];
+  currentPhase: DiscoursePhase;
+  status: 'panel_selection' | 'in_progress' | 'synthesis' | 'completed' | 'cancelled';
+  emergenceReport?: EmergenceReport;
+  createdAt: Date;
+  updatedAt: Date;
 }

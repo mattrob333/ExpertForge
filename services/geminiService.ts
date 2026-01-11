@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { ExpertPersona, PersonalityDirection, TeamContext, TeamStructure, ResourceRecommendations, ResourceRequest, TeamSource } from "../types";
+import { ExpertPersona, PersonalityDirection, TeamContext, TeamStructure, ResourceRecommendations, ResourceRequest, TeamSource, Legend, LegendCategory } from "../types";
 
 const PERSONA_SCHEMA = {
   type: Type.OBJECT,
@@ -11,6 +11,14 @@ const PERSONA_SCHEMA = {
     category: { 
       type: Type.STRING,
       enum: ['marketing', 'sales', 'engineering', 'product', 'finance', 'operations', 'hr', 'legal', 'consulting', 'strategy', 'design', 'data', 'leadership', 'general']
+    },
+    cognitive_style: {
+      type: Type.STRING,
+      enum: ['analytical', 'creative', 'practical']
+    },
+    natural_orientation: {
+      type: Type.STRING,
+      enum: ['advocate', 'skeptical', 'neutral', 'contrarian', 'synthesizer']
     },
     stats: {
       type: Type.OBJECT,
@@ -116,6 +124,7 @@ const TEAM_STRUCTURE_SCHEMA = {
         properties: {
           id: { type: Type.STRING },
           role: { type: Type.STRING },
+          department: { type: Type.STRING },
           description: { type: Type.STRING },
           position: {
             type: Type.OBJECT,
@@ -126,7 +135,7 @@ const TEAM_STRUCTURE_SCHEMA = {
             required: ["x", "y"]
           }
         },
-        required: ["id", "role", "description", "position"]
+        required: ["id", "role", "department", "description", "position"]
       }
     },
     edges: {
@@ -169,6 +178,116 @@ const RESOURCE_RECOMMENDATIONS_SCHEMA = {
     }
   },
   required: ["introduction", "resources"]
+};
+
+// Legend schema for generating legendary advisors
+const LEGEND_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    name: { type: Type.STRING },
+    title: { type: Type.STRING },
+    categories: { type: Type.ARRAY, items: { type: Type.STRING } },
+    rank: { type: Type.INTEGER },
+    quote: { type: Type.STRING },
+    identity: {
+      type: Type.OBJECT,
+      properties: {
+        essence: { type: Type.STRING },
+        introduction: { type: Type.STRING },
+        quote: { type: Type.STRING }
+      },
+      required: ["essence", "introduction", "quote"]
+    },
+    worldview: {
+      type: Type.OBJECT,
+      properties: {
+        coreBeliefs: { type: Type.ARRAY, items: { type: Type.STRING } },
+        whatTheyFindBeautiful: { type: Type.STRING },
+        whatMakesThemCringe: { type: Type.STRING },
+        influences: { type: Type.ARRAY, items: { type: Type.STRING } }
+      },
+      required: ["coreBeliefs", "whatTheyFindBeautiful", "whatMakesThemCringe", "influences"]
+    },
+    expertise: {
+      type: Type.OBJECT,
+      properties: {
+        deepMastery: { type: Type.ARRAY, items: { type: Type.STRING } },
+        workingKnowledge: { type: Type.ARRAY, items: { type: Type.STRING } },
+        curiosityEdges: { type: Type.ARRAY, items: { type: Type.STRING } },
+        honestLimits: { type: Type.ARRAY, items: { type: Type.STRING } }
+      },
+      required: ["deepMastery", "workingKnowledge", "curiosityEdges", "honestLimits"]
+    },
+    thinkingStyle: {
+      type: Type.OBJECT,
+      properties: {
+        howTheySeeProblems: { type: Type.STRING },
+        mentalModels: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              description: { type: Type.STRING },
+              application: { type: Type.STRING },
+              quote: { type: Type.STRING }
+            },
+            required: ["name", "description"]
+          }
+        },
+        reasoningPatterns: { type: Type.STRING }
+      },
+      required: ["howTheySeeProblems", "mentalModels", "reasoningPatterns"]
+    },
+    overview: {
+      type: Type.OBJECT,
+      properties: {
+        corePhilosophy: { type: Type.ARRAY, items: { type: Type.STRING } },
+        knownFor: { type: Type.ARRAY, items: { type: Type.STRING } },
+        influences: { type: Type.ARRAY, items: { type: Type.STRING } }
+      },
+      required: ["corePhilosophy", "knownFor", "influences"]
+    },
+    mentalModels: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING },
+          description: { type: Type.STRING }
+        },
+        required: ["name", "description"]
+      }
+    },
+    famousDecisions: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          year: { type: Type.INTEGER },
+          situation: { type: Type.STRING },
+          decision: { type: Type.STRING },
+          logic: { type: Type.STRING },
+          outcome: { type: Type.STRING }
+        },
+        required: ["title", "situation", "decision", "logic", "outcome"]
+      }
+    },
+    sampleQuestions: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          question: { type: Type.STRING },
+          previewResponse: { type: Type.STRING }
+        },
+        required: ["question", "previewResponse"]
+      }
+    },
+    mockResponses: { type: Type.ARRAY, items: { type: Type.STRING } }
+  },
+  required: ["name", "title", "categories", "rank", "quote", "overview", "mentalModels", "famousDecisions", "sampleQuestions", "mockResponses"]
 };
 
 // Persona Creator Meta Prompt - creates thinking partners, not task executors
@@ -223,7 +342,18 @@ ${PERSONA_META_PROMPT}
 Now create a detailed expert persona based on this description: "${description}"
 ${direction ? `Personality direction: ${direction} (infuse this energy throughout their character)` : ''}
 
-UNIQUE NAME GENERATION (CRITICAL - READ CAREFULLY):
+CRITICAL INSTRUCTION - FAMOUS FIGURES VS. NEW CHARACTERS:
+Analyze the description. Does it request a specific, real-world famous figure (e.g., "Elon Musk", "Steve Jobs", "Create Einstein")?
+
+IF YES (REAL FIGURE):
+- Use their REAL NAME.
+- Base the persona entirely on their actual known beliefs, mental models, quirks, and history.
+- Ignore the "Unique Name Generation" section below.
+
+IF NO (GENERIC DESCRIPTION):
+- Follow the "Unique Name Generation" instructions below strictly.
+
+UNIQUE NAME GENERATION (ONLY FOR NEW CHARACTERS):
 - RANDOM SEED: ${Date.now()}-${Math.random().toString(36).substr(2, 8)}
 - You MUST generate a COMPLETELY UNIQUE name that has NEVER been used before
 - BANNED NAMES (DO NOT USE): James Hartley, David Hartley, James Mitchell, Julian Thorne, Marcus Thorne, Julian Beck, Julian Miller, Marcus Chen, Ryan O'Connor, Michael Torres, Chris Anderson, Tom Bradley, Sarah Mitchell, Kate Reynolds, Emily Chen, Rachel Torres, Zayan Mistry, Sloane Vance, Silas Vance, Elara Vane
@@ -238,6 +368,21 @@ UNIQUE NAME GENERATION (CRITICAL - READ CAREFULLY):
 CATEGORY ASSIGNMENT (CRITICAL):
 Based on the expertise description, assign ONE category from: marketing, sales, engineering, product, finance, operations, hr, legal, consulting, strategy, design, data, leadership, general
 Choose the MOST relevant category based on their primary expertise area.
+
+COGNITIVE ARCHITECTURE (FOR EMERGENT DISCOURSE):
+Assign a cognitive_style based on Sternberg's Triarchic Theory:
+- "analytical": Data-driven, logical frameworks, rigorous evaluation, "what does the evidence say?"
+- "creative": Novel framing, unexpected connections, "what if we're asking the wrong question?"
+- "practical": Implementation reality, operational constraints, "how would this actually work?"
+
+Assign a natural_orientation for how they approach debates:
+- "advocate": Naturally argues FOR ideas, finds best evidence, optimistic
+- "skeptical": Naturally finds weaknesses, risks, plays devil's advocate
+- "neutral": Evaluates objectively, calls it as they see it
+- "contrarian": Argues the position nobody else is arguing, breaks consensus
+- "synthesizer": Finds integration points, asks "what if both sides are right?"
+
+Choose based on their personality and expertise. A CFO might be analytical/skeptical. A creative director might be creative/advocate. A COO might be practical/neutral.
 
 The introduction MUST be in first person, 2-3 sentences, showing personality not credentials.
 Example good intro: "Hey! I'm [Name] — I spend most of my time thinking about [domain] and getting unreasonably excited about [specific interest]. I have strong opinions about [topic]. What's on your mind?"
@@ -261,7 +406,41 @@ Make the quirks specific and memorable. Give them honest limits they'd acknowled
     id: Math.random().toString(36).substr(2, 9)
   };
   
-  // Now generate an avatar for the persona
+  // Check if this is a famous figure by asking the model
+  let isFamousFigure = false;
+  try {
+    const famousCheckResponse = await ai.models.generateContent({
+      model: 'models/gemini-2.0-flash',
+      contents: `Is "${persona.name}" a real-world famous person (celebrity, business leader, historical figure, etc.)? Answer ONLY "yes" or "no", nothing else.`,
+    });
+    isFamousFigure = famousCheckResponse.text?.trim().toLowerCase() === 'yes';
+  } catch (err) {
+    console.error('Failed to check if famous figure:', err);
+  }
+
+  // If famous figure, try to fetch their real photo via Google Search
+  if (isFamousFigure) {
+    try {
+      const photoSearchResponse = await ai.models.generateContent({
+        model: 'models/gemini-2.0-flash',
+        contents: `Find a professional headshot photo URL for ${persona.name}. Return ONLY a direct image URL (ending in .jpg, .png, or similar) from a reliable source like Wikipedia Commons, official company pages, or news outlets. Just the URL, nothing else.`,
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
+      });
+      
+      const photoUrl = photoSearchResponse.text?.trim();
+      if (photoUrl && (photoUrl.startsWith('http://') || photoUrl.startsWith('https://'))) {
+        persona.avatarUrl = photoUrl;
+        persona.isLegend = true; // Mark as a famous figure
+        return persona; // Skip AI avatar generation
+      }
+    } catch (err) {
+      console.error('Failed to fetch real photo for famous figure:', err);
+    }
+  }
+  
+  // Generate an AI avatar for non-famous personas (or if photo fetch failed)
   try {
     // Determine gender from name for accurate avatar generation
     const firstName = persona.name.split(' ')[0];
@@ -316,8 +495,22 @@ Style requirements:
 export async function generateTeamStructure(context: TeamContext): Promise<TeamStructure> {
   const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
   
+  // Determine optimal team size based on context
+  // Startup/small = 5-7 nodes, Medium = 8-10 nodes, Large = 10-12 nodes
+  const getTeamSizeGuidance = () => {
+    const desc = context.description.toLowerCase();
+    const isSmall = desc.includes('startup') || desc.includes('early stage') || desc.includes('small') || desc.includes('solo') || desc.includes('bootstrapped') || context.needs.length <= 2;
+    const isLarge = desc.includes('enterprise') || desc.includes('large') || desc.includes('scaling') || desc.includes('multiple departments') || context.needs.length >= 5;
+    
+    if (isSmall) return { min: 5, max: 7, description: 'lean startup team (5-7 roles)' };
+    if (isLarge) return { min: 10, max: 12, description: 'full enterprise team (10-12 roles)' };
+    return { min: 7, max: 10, description: 'growth-stage team (7-10 roles)' };
+  };
+  
+  const teamSize = getTeamSizeGuidance();
+  
   const prompt = `
-    Generate an optimal 12-node hierarchical advisory team structure.
+    Generate an optimal hierarchical advisory team structure using NAICS/SOC STANDARD JOB TITLES.
     
     Context:
     Type: ${context.type}
@@ -325,32 +518,107 @@ export async function generateTeamStructure(context: TeamContext): Promise<TeamS
     Industry: ${context.industry || 'General'}
     Description: ${context.description}
     Needs: ${context.needs.join(', ')}
+    
+    TEAM SIZE GUIDANCE: Generate a ${teamSize.description} with ${teamSize.min}-${teamSize.max} nodes.
+    Scale appropriately - don't over-staff a startup or under-staff an enterprise.
 
-    Return exactly 12 nodes across 4 tiers:
-    1. CEO/Leader (Top)
-    2. 3 VP-level Department Leads (Mid-Top)
-    3. 5 Manager-level specialized leads (Mid-Bottom)
-    4. 3 Individual Contributor/Analyst roles (Bottom)
+    CRITICAL: Use ONLY standardized NAICS/SOC (Standard Occupational Classification) job titles.
+    
+    APPROVED STANDARD JOB TITLES BY DEPARTMENT:
+    
+    EXECUTIVE (department: "Executive"):
+    - Chief Executive Officer
+    - Chief Operating Officer
+    - Chief Financial Officer
+    - Chief Technology Officer
+    - Chief Marketing Officer
+    
+    SALES (department: "Sales"):
+    - Vice President of Sales
+    - Sales Manager
+    - Account Executive
+    - Business Development Manager
+    - Sales Representative
+    - Inside Sales Representative
+    
+    MARKETING (department: "Marketing"):
+    - Vice President of Marketing
+    - Marketing Manager
+    - Digital Marketing Manager
+    - Content Marketing Specialist
+    - Brand Manager
+    - Marketing Analyst
+    
+    OPERATIONS (department: "Operations"):
+    - Vice President of Operations
+    - Operations Manager
+    - Project Manager
+    - Supply Chain Manager
+    - Quality Assurance Manager
+    - Business Analyst
+    
+    FINANCE (department: "Finance"):
+    - Vice President of Finance
+    - Financial Controller
+    - Finance Manager
+    - Staff Accountant
+    - Financial Analyst
+    - Accounts Payable Specialist
+    
+    TECHNOLOGY (department: "Technology"):
+    - Vice President of Engineering
+    - Software Engineering Manager
+    - Senior Software Engineer
+    - Data Engineer
+    - DevOps Engineer
+    - Systems Administrator
+    
+    HUMAN RESOURCES (department: "Human Resources"):
+    - Vice President of Human Resources
+    - HR Manager
+    - Talent Acquisition Specialist
+    - HR Business Partner
+    - Compensation Analyst
+    
+    CONSULTING/STRATEGY (department: "Strategy"):
+    - Vice President of Strategy
+    - Strategy Manager
+    - Management Consultant
+    - Senior Consultant
+    - Business Strategy Analyst
 
-    Nodes must have these exact IDs:
-    ceo, vp-sales, vp-operations, vp-consulting, sales-manager, account-exec, controller, senior-consultant, project-manager, sales-rep, staff-accountant, analyst.
+    STRUCTURE REQUIREMENTS:
+    - ALWAYS include a CEO at the top (id: "ceo", department: "Executive")
+    - Generate ${teamSize.min}-${teamSize.max} total nodes based on the team size guidance
+    - Use a hierarchical structure with 2-4 tiers depending on team size:
+      * Tier 1: CEO (always required)
+      * Tier 2: VP-level leads (1-3 based on needs)
+      * Tier 3: Manager-level specialists (2-5 based on needs)
+      * Tier 4: Individual contributors (0-3 for larger teams only)
+    
+    NODE ID CONVENTIONS:
+    - CEO: "ceo"
+    - VPs: "vp-1", "vp-2", "vp-3" (as needed)
+    - Managers: "manager-1", "manager-2", etc. (as needed)
+    - Individual Contributors: "ic-1", "ic-2", etc. (as needed)
+    
+    POSITIONING:
+    - Level 1 (y: 0): CEO centered (x: 400)
+    - Level 2 (y: 150): VPs spread evenly across width
+    - Level 3 (y: 300): Managers spread evenly across width
+    - Level 4 (y: 450): ICs spread evenly across width (if applicable)
+    - X positions should range from 100 to 700, spaced evenly based on count per level
+    
+    EDGES:
+    - Create logical reporting structure (CEO -> VPs -> Managers -> ICs)
+    - Each VP should have 1-2 direct reports
+    - Edges format: { id: "e-{source}-{target}", source: "{nodeId}", target: "{nodeId}" }
 
-    Map positions exactly as follows:
-    Level 1 (y: 0): ceo (x: 400)
-    Level 2 (y: 150): vp-sales (x: 200), vp-operations (x: 400), vp-consulting (x: 600)
-    Level 3 (y: 300): sales-manager (x: 100), account-exec (x: 250), controller (x: 400), senior-consultant (x: 550), project-manager (x: 700)
-    Level 4 (y: 450): sales-rep (x: 100), staff-accountant (x: 400), analyst (x: 550)
-
-    Define edges to connect parents to children:
-    ceo -> vp-sales, vp-operations, vp-consulting
-    vp-sales -> sales-manager, account-exec
-    vp-operations -> controller
-    vp-consulting -> senior-consultant, project-manager
-    sales-manager -> sales-rep
-    controller -> staff-accountant
-    senior-consultant -> analyst
-
-    Provide roles that feel high-stakes and specific to the problem. Provide rationale for this large structure.
+    Each node MUST include a "department" field from: Executive, Sales, Marketing, Operations, Finance, Technology, Human Resources, Strategy, Product, Legal.
+    
+    IMPORTANT: Select departments and roles that directly address the stated needs: ${context.needs.join(', ')}
+    
+    Provide rationale explaining why this specific structure fits the company's context and needs.
   `;
 
   const response = await ai.models.generateContent({
@@ -762,4 +1030,105 @@ Style requirements:
   }
 
   return persona;
+}
+
+// Generate a new Legend from a famous person's name
+
+export async function generateLegend(personName: string): Promise<Legend> {
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+  
+  const prompt = `
+You are creating a legendary business advisor persona based on the real-world famous figure: "${personName}"
+
+Research this person thoroughly and create a comprehensive Legend profile that captures their actual:
+- Philosophy and worldview
+- Mental models and frameworks they use
+- Famous decisions they've made
+- How they would advise others
+
+IMPORTANT: This must be based on the REAL person "${personName}". Use their actual quotes, real decisions, genuine philosophy.
+
+Assign 1-3 categories from: innovation, operations, growth, strategy, product, leadership, marketing, engineering, sales
+Choose categories that best match their actual expertise and legacy.
+
+The title should be a compelling 2-4 word descriptor like "The Acquisition Architect" or "The Taste Architect"
+
+For famousDecisions, include 2-3 real pivotal decisions from their career with actual context.
+
+For mentalModels, include 3-5 frameworks or approaches they're known for.
+
+For sampleQuestions, create 2-3 realistic questions someone might ask them with preview responses in their voice.
+
+For mockResponses, include 2-3 signature phrases or response styles they'd use.
+
+The quote field should be one of their most famous actual quotes.
+
+Make this feel like you're capturing the essence of talking to ${personName} themselves.
+`;
+
+  const response = await ai.models.generateContent({
+    model: 'models/gemini-3-flash-preview',
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: LEGEND_SCHEMA,
+    }
+  });
+
+  const legendData = JSON.parse(response.text);
+  
+  // Generate ID from name
+  const id = personName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  
+  // Ensure categories are valid LegendCategory values
+  const validCategories: LegendCategory[] = ['innovation', 'operations', 'growth', 'strategy', 'product', 'leadership', 'marketing', 'engineering', 'sales'];
+  const categories = (legendData.categories || ['leadership']).filter((c: string) => validCategories.includes(c as LegendCategory)) as LegendCategory[];
+  if (categories.length === 0) categories.push('leadership');
+
+  const legend: Legend = {
+    id,
+    name: legendData.name || personName,
+    title: legendData.title || 'Industry Legend',
+    categories,
+    rank: legendData.rank || 1,
+    quote: legendData.quote || legendData.identity?.quote || '',
+    identity: legendData.identity,
+    worldview: legendData.worldview,
+    expertise: legendData.expertise,
+    thinkingStyle: legendData.thinkingStyle,
+    overview: legendData.overview || {
+      corePhilosophy: legendData.worldview?.coreBeliefs || [],
+      knownFor: legendData.expertise?.deepMastery || [],
+      influences: legendData.worldview?.influences || []
+    },
+    mentalModels: legendData.mentalModels || legendData.thinkingStyle?.mentalModels || [],
+    famousDecisions: legendData.famousDecisions || [],
+    sampleQuestions: legendData.sampleQuestions || [],
+    mockResponses: legendData.mockResponses || [],
+  };
+
+  // Try to fetch a photo using web search
+  try {
+    const photoSearchResponse = await ai.models.generateContent({
+      model: 'models/gemini-2.0-flash',
+      contents: `Find a professional headshot photo URL for ${personName}. Return ONLY a direct image URL (ending in .jpg, .png, or similar) from a reliable source like Wikipedia Commons, official company pages, or news outlets. Just the URL, nothing else.`,
+      config: {
+        tools: [{ googleSearch: {} }]
+      }
+    });
+    
+    const photoUrl = photoSearchResponse.text?.trim();
+    if (photoUrl && (photoUrl.startsWith('http://') || photoUrl.startsWith('https://'))) {
+      legend.photo = photoUrl;
+    }
+  } catch (err) {
+    console.error('Failed to fetch photo for legend:', err);
+  }
+
+  // Fallback photo if none found
+  if (!legend.photo) {
+    legend.photo = `https://ui-avatars.com/api/?name=${encodeURIComponent(personName)}&background=0f172a&color=06b6d4&size=400&bold=true`;
+  }
+
+  return legend;
 }

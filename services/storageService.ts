@@ -36,6 +36,7 @@ const personaToDbFormat = (persona: ExpertPersona, userId: string) => ({
   sidebar: persona.sidebar,
   team_id: persona.teamId || null,
   category: persona.category || null,
+  department: persona.department || null,
 });
 
 // Convert database format to ExpertPersona
@@ -56,6 +57,7 @@ const dbToPersonaFormat = (row: any): ExpertPersona => ({
   sidebar: row.sidebar,
   teamId: row.team_id,
   category: row.category,
+  department: row.department,
 });
 
 // EXPERTS
@@ -547,10 +549,38 @@ export interface RoleAssignment {
   humanEmail?: string | null;
   humanTitle?: string | null;
   customAgentId?: string | null;
+  department?: string | null; // Department for filtering: Executive, Sales, Marketing, etc.
+  roleTitle?: string | null; // Role title from org chart node
 }
 
 export async function getRoleAssignments(teamId: string): Promise<RoleAssignment[]> {
-  // For now, use localStorage since we don't have a Supabase table yet
+  // Try Supabase first, fallback to localStorage
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await db
+        .from('org_node_agents')
+        .select('*')
+        .eq('team_id', teamId);
+      
+      if (!error && data && data.length > 0) {
+        return data.map((row: any) => ({
+          nodeId: row.node_id,
+          expertId: row.primary_agent_id || null,
+          legendId: row.backup_legend_ids?.[0] || null, // First legend as primary
+          humanName: row.assigned_user_name || null,
+          humanEmail: row.assigned_user_email || null,
+          humanTitle: row.role_title || null,
+          customAgentId: row.primary_agent_id || null,
+          department: row.department || null,
+          roleTitle: row.role_title || null,
+        }));
+      }
+    } catch (err) {
+      console.error('Error fetching role assignments from Supabase:', err);
+    }
+  }
+  
+  // Fallback to localStorage
   const stored = localStorage.getItem(`role_assignments_${teamId}`);
   if (stored) {
     try {
@@ -563,5 +593,36 @@ export async function getRoleAssignments(teamId: string): Promise<RoleAssignment
 }
 
 export async function saveRoleAssignments(teamId: string, assignments: RoleAssignment[]): Promise<void> {
+  // Always save to localStorage as backup
   localStorage.setItem(`role_assignments_${teamId}`, JSON.stringify(assignments));
+  
+  // Save to Supabase if configured
+  if (isSupabaseConfigured()) {
+    try {
+      // Upsert each assignment to org_node_agents
+      for (const assignment of assignments) {
+        const { error } = await db
+          .from('org_node_agents')
+          .upsert({
+            team_id: teamId,
+            node_id: assignment.nodeId,
+            primary_agent_id: assignment.customAgentId || assignment.expertId || null,
+            backup_legend_ids: assignment.legendId ? [assignment.legendId] : [],
+            assigned_user_name: assignment.humanName || null,
+            assigned_user_email: assignment.humanEmail || null,
+            role_title: assignment.roleTitle || assignment.humanTitle || null,
+            department: assignment.department || null,
+            agent_status: (assignment.customAgentId || assignment.expertId) ? 'active' : 'empty',
+          }, {
+            onConflict: 'team_id,node_id',
+          });
+        
+        if (error) {
+          console.error('Error saving role assignment to Supabase:', error);
+        }
+      }
+    } catch (err) {
+      console.error('Error saving role assignments to Supabase:', err);
+    }
+  }
 }

@@ -1,8 +1,8 @@
 # ExpertForge Engineering Log
 
 **Project**: ExpertForge - AI Expert Persona & Advisory Team Builder  
-**Last Updated**: January 3, 2026  
-**Status**: Active Development (MVP Complete)
+**Last Updated**: January 10, 2026  
+**Status**: Active Development (Oracle Mode Released)
 
 ---
 
@@ -93,14 +93,132 @@ ExpertForge is an AI-powered platform that generates detailed expert personas an
 |------|---------|
 | `App.tsx` | Main state machine and routing |
 | `services/geminiService.ts` | All AI generation functions |
+| `services/discourseService.ts` | Oracle Mode panel selection & discourse engine |
 | `services/storageService.ts` | Data persistence layer |
 | `components/TeamBuilder.tsx` | Org chart + Role Workspace |
+| `components/EmergentChat.tsx` | Oracle Mode UI component |
 | `data/legends.ts` | Legendary persona definitions |
-| `types.ts` | TypeScript interfaces |
+| `types.ts` | TypeScript interfaces (includes discourse types) |
 
 ---
 
 ## Recent Development Sessions
+
+### Session: January 10, 2026 (Evening) - UI/UX Polish & Department Filtering
+
+#### Features Implemented
+
+1. **Database Schema: Department Field for Filtering**
+   - Created `004_department_schema.sql` migration
+   - Added `department` column to `org_node_agents` and `experts` tables
+   - Added indexes for performance: `org_node_agents_department_idx`, `experts_department_idx`
+   - Helper functions: `get_team_departments()`, `get_agents_by_department()`
+
+2. **Role Assignments Persistence Fix**
+   - Updated `storageService.ts` to persist role assignments to Supabase `org_node_agents` table
+   - Uses upsert with `onConflict: 'team_id,node_id'` for proper updates
+   - Falls back to localStorage if Supabase not configured
+   - Saves department and roleTitle with each assignment
+
+3. **Dynamic Org Chart Generation**
+   - Modified `generateTeamStructure()` to scale based on company context
+   - Startup/small: 5-7 nodes, Growth: 7-10 nodes, Enterprise: 10-12 nodes
+   - CEO always present at top
+   - Detects keywords: "startup", "early stage", "enterprise", "scaling"
+
+4. **Team Setup UX Improvements**
+   - Added "Coming Soon" overlays to "Hypothetical Startup" and "Project" cards
+   - Wired "Problem to Solve / Debate" card directly to Oracle Mode
+   - Oracle Mode card has fuchsia gradient styling with ⚡ badge
+   - Disabled cards have reduced opacity and cursor-not-allowed
+
+5. **Unified Profile Card Component**
+   - Created `UnifiedProfileCard.tsx` with three variants: full, compact, mini
+   - Normalizes data from both `ExpertPersona` and `Legend` types
+   - Full variant: 320×460px holographic card with stats, mental models, expertise
+   - Compact variant: horizontal card for lists
+   - Mini variant: pill-style avatar + name
+   - Category-specific accent colors for both legends and departments
+
+6. **Famous Figure Detection & Real Avatar**
+   - Added famous figure detection in `generateExpertPersona()`
+   - Uses Gemini to check if name is a real-world famous person
+   - Fetches real photo via Google Search grounding tool
+   - Sets `isLegend: true` flag for famous figures
+
+7. **UI Polish Updates**
+   - Replaced "Log Out" with "Oracle Mode" button on HomeDashboard
+   - Increased Quick Actions font size from `text-[10px]` to `text-xs`
+   - Added collapsible rationale section in TeamBuilder sidebar
+   - Department field added to ExpertPersona TypeScript interface
+
+#### Files Modified
+- `supabase/migrations/004_department_schema.sql` (new)
+- `components/UnifiedProfileCard.tsx` (new)
+- `services/storageService.ts` - Supabase persistence for role assignments
+- `services/geminiService.ts` - Dynamic org chart, famous figure detection
+- `components/TeamSetup.tsx` - Coming Soon overlays, Oracle Mode wiring
+- `components/TeamBuilder.tsx` - Collapsible rationale, department persistence
+- `components/HomeDashboard.tsx` - Oracle Mode button, larger fonts
+- `App.tsx` - Oracle Mode state and TeamSetup wiring
+- `types.ts` - Added department field to ExpertPersona
+
+---
+
+### Session: January 10, 2026 (Morning) - Oracle Mode Release
+
+#### Features Implemented
+
+1. **Oracle Mode - Intellectual Emergence System**
+   - New `EmergentChat.tsx` component for structured intellectual discourse
+   - Full-screen overlay interface with 4 views: input, panel, discourse, report
+   - Question analysis identifies domains, tensions, and cognitive needs
+   - Automatic panel selection from team agents + legendary advisors
+   - Stance assignment ensures productive friction (Advocate, Skeptic, Devil's Advocate, Synthesizer)
+   - Structured discourse phases: Position → Challenge → Red Team → Synthesis → Emergence
+
+2. **Cognitive Architecture for Agents**
+   - Added `cognitive_style` field based on Sternberg's Triarchic Theory (analytical, creative, practical)
+   - Added `natural_orientation` for default debate stance (advocate, skeptical, neutral, contrarian, synthesizer)
+   - Updated `PERSONA_SCHEMA` in geminiService.ts with new enum fields
+   - Enhanced persona generation prompt to assign cognitive attributes
+
+3. **Discourse Service (`discourseService.ts`)**
+   - `analyzeQuestion()` - AI-powered question analysis for panel selection
+   - `scoreExpertForQuestion()` - Relevance scoring based on expertise match
+   - `ensureCognitiveDiversity()` - Guarantees all three cognitive styles represented
+   - `assignStances()` - Maps natural orientations to discourse roles
+   - `selectDebatePanel()` - Full panel selection algorithm
+   - `generatePositionStatement()` - Initial position with stance injection
+   - `generateChallenge()` - Directed challenges between experts
+   - `generateRedTeamIntervention()` - Challenge shared assumptions
+   - `attemptSynthesis()` - Integration of perspectives
+   - `detectEmergence()` - Evaluate novelty and genuine emergence
+   - `generateEmergenceReport()` - Final report with attribution
+
+4. **Discourse Type System**
+   - New types: `CognitiveStyle`, `NaturalOrientation`, `DiscourseStance`
+   - `QuestionAnalysis` interface for AI question parsing
+   - `DiscoursePanel` and `PanelMember` for panel configuration
+   - `DiscourseMessage` with stance metadata and targeting
+   - `EmergenceEvaluation` with novelty scoring
+   - `EmergenceReport` for final output
+   - `DiscourseSession` for complete session state
+
+5. **UI Integration**
+   - "Oracle Mode" button in TeamBuilder header (amber/purple gradient)
+   - Panel review screen with stance dropdowns
+   - Real-time discourse view with phase progress bar
+   - Agent chips with stance indicators
+   - Emergence report with novelty score and attribution
+   - Copy synthesis to clipboard functionality
+
+6. **Hover Card Z-Index Fix**
+   - Fixed org chart hover cards appearing behind nodes
+   - Used React Flow's `setNodes` to dynamically set `zIndex: 1000` on hovered nodes
+   - Proper cleanup on mouse leave
+
+---
 
 ### Session: January 2-3, 2026
 
@@ -290,6 +408,29 @@ VITE_STRIPE_PUBLISHABLE_KEY=<stripe_key>
 ---
 
 ## Changelog
+
+### v0.4.1 (January 10, 2026)
+- Added department field to database schema (migration 004)
+- Fixed role assignments persistence to use Supabase org_node_agents table
+- Dynamic org chart generation (5-12 nodes based on company size)
+- Added "Coming Soon" overlays to Hypothetical Startup and Project cards
+- Wired "Problem to Solve / Debate" directly to Oracle Mode
+- Created UnifiedProfileCard.tsx component (full, compact, mini variants)
+- Famous figure detection with real avatar fetching via Google Search
+- Replaced Log Out with Oracle Mode button on dashboard
+- Increased Quick Actions font size
+- Added collapsible rationale section in TeamBuilder
+
+### v0.4.0 (January 10, 2026)
+- Added Oracle Mode - Intellectual Emergence System
+- New EmergentChat.tsx component with full discourse UI
+- New discourseService.ts with panel selection and stance assignment
+- Added cognitive_style and natural_orientation to expert personas
+- Added comprehensive discourse types to types.ts
+- Panel selection algorithm with cognitive diversity enforcement
+- Structured discourse phases: Position → Challenge → Red Team → Synthesis → Emergence
+- Emergence detection with novelty scoring
+- Fixed hover card z-index issue using React Flow node zIndex
 
 ### v0.3.0 (January 3, 2026)
 - Added Team Chat with cascading agent responses and @mentions

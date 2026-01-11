@@ -21,6 +21,7 @@ import { getTeamSources, saveTeamSource, deleteTeamSource, getRoleAssignments, s
 import { scrapeUrlContent, generateCustomAgentForRole } from '../services/geminiService';
 import { LEGENDS } from '../data/legends';
 import { GoogleGenAI } from '@google/genai';
+import EmergentChat from './EmergentChat';
 
 // Simple markdown renderer for chat messages
 const renderMarkdown = (text: string): React.ReactNode => {
@@ -162,6 +163,15 @@ const renderInlineMarkdown = (text: string): React.ReactNode => {
   return parts;
 };
 
+interface GlobalGenerationState {
+  isGenerating: boolean;
+  teamId: string | null;
+  teamName: string | null;
+  current: number;
+  total: number;
+  currentRole: string;
+}
+
 interface TeamBuilderProps {
   structure: TeamStructure;
   context: TeamContextWithId | TeamContext | null;
@@ -173,6 +183,8 @@ interface TeamBuilderProps {
   onExpertCreated?: (expert: ExpertPersona) => Promise<ExpertPersona> | void;
   onSelectExpert?: (expert: ExpertPersona) => void;
   onDeleteExpert?: (expertId: string) => void;
+  globalGenerationState?: GlobalGenerationState | null;
+  onGenerationStateChange?: (state: GlobalGenerationState | null) => void;
 }
 
 type CenterPanelView = 'orgChart' | 'teamChat';
@@ -226,16 +238,42 @@ interface NodeAssignment {
 type RoleModalTab = 'generate' | 'human' | 'expert' | 'legend';
 
 // Custom node component - 3D stacked glass cards like reference image
-const DraftNode = ({ data, selected }: NodeProps) => {
+const DraftNode = ({ data, selected, id }: NodeProps) => {
   const { role, level, assignment, onAssign } = data;
+  const [showHoverCard, setShowHoverCard] = useState(false);
+  const { setNodes } = useReactFlow();
   
   // Get display info from assignment
   const getAssignmentDisplay = () => {
     if (!assignment) return null;
-    if (assignment.customAgent) return { name: assignment.customAgent.name, type: 'AI Agent', avatar: assignment.customAgent.avatarUrl };
-    if (assignment.expert) return { name: assignment.expert.name, type: 'Expert', avatar: assignment.expert.avatarUrl };
-    if (assignment.legend) return { name: assignment.legend.name, type: 'Legend', avatar: assignment.legend.photo };
-    if (assignment.human) return { name: assignment.human.name, type: 'Human', avatar: null };
+    if (assignment.customAgent) return { 
+      name: assignment.customAgent.name, 
+      type: 'AI Agent', 
+      avatar: assignment.customAgent.avatarUrl,
+      essence: assignment.customAgent.essence,
+      expertise: assignment.customAgent.expertiseMap?.deepMastery?.slice(0, 3) || []
+    };
+    if (assignment.expert) return { 
+      name: assignment.expert.name, 
+      type: 'Expert', 
+      avatar: assignment.expert.avatarUrl,
+      essence: assignment.expert.essence,
+      expertise: assignment.expert.expertiseMap?.deepMastery?.slice(0, 3) || []
+    };
+    if (assignment.legend) return { 
+      name: assignment.legend.name, 
+      type: 'Legend', 
+      avatar: assignment.legend.photo,
+      essence: assignment.legend.title,
+      expertise: assignment.legend.expertise?.deepMastery?.slice(0, 3) || assignment.legend.overview?.knownFor?.slice(0, 3) || []
+    };
+    if (assignment.human) return { 
+      name: assignment.human.name, 
+      type: 'Human', 
+      avatar: null,
+      essence: assignment.human.title || 'Team Member',
+      expertise: []
+    };
     return null;
   };
   
@@ -267,13 +305,89 @@ const DraftNode = ({ data, selected }: NodeProps) => {
 
   const style = levelStyles[level] || levelStyles[3];
 
+  // Handle hover to bring node to front
+  const handleMouseEnter = () => {
+    if (assignmentDisplay) {
+      setShowHoverCard(true);
+      setNodes(nds => nds.map(n => 
+        n.id === id ? { ...n, zIndex: 1000 } : { ...n, zIndex: n.zIndex === 1000 ? undefined : n.zIndex }
+      ));
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setShowHoverCard(false);
+    setNodes(nds => nds.map(n => 
+      n.id === id ? { ...n, zIndex: undefined } : n
+    ));
+  };
+
   return (
-    <div className="group">
+    <div 
+      className="group relative"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       <Handle 
         type="target" 
         position={Position.Top} 
         className="!bg-cyan-400 !border-cyan-300 !w-2 !h-2 !opacity-0" 
       />
+      
+      {/* Hover Mini-Profile Card - Uniform vertical portrait style, positioned below */}
+      {showHoverCard && assignmentDisplay && (
+        <div 
+          className="absolute top-full left-1/2 -translate-x-1/2 mt-3 pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200"
+          style={{ width: '180px', zIndex: 9999 }}
+        >
+          {/* Arrow pointer at top */}
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-slate-900/95 border-l border-t border-slate-700 rotate-45"></div>
+          
+          <div className="bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-xl overflow-hidden shadow-2xl shadow-black/50">
+            {/* Avatar - Large portrait style */}
+            <div className="relative w-full h-32 bg-gradient-to-br from-slate-800 to-slate-900">
+              {assignmentDisplay.avatar ? (
+                <img 
+                  src={assignmentDisplay.avatar} 
+                  alt={assignmentDisplay.name}
+                  className="w-full h-full object-cover object-top"
+                />
+              ) : (
+                <div className="w-full h-full bg-green-500/20 flex items-center justify-center text-4xl">
+                  👤
+                </div>
+              )}
+              {/* Type badge overlay */}
+              <span className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[8px] font-bold uppercase backdrop-blur-sm ${
+                assignmentDisplay.type === 'AI Agent' ? 'bg-cyan-500/80 text-white' :
+                assignmentDisplay.type === 'Legend' ? 'bg-purple-500/80 text-white' :
+                assignmentDisplay.type === 'Human' ? 'bg-green-500/80 text-white' :
+                'bg-slate-500/80 text-white'
+              }`}>
+                {assignmentDisplay.type}
+              </span>
+            </div>
+            
+            {/* Content */}
+            <div className="p-3">
+              <p className="text-white font-bold text-sm truncate">{assignmentDisplay.name}</p>
+              <p className="text-cyan-400 text-[11px] line-clamp-2 mt-0.5 leading-tight">{assignmentDisplay.essence}</p>
+              
+              {assignmentDisplay.expertise && assignmentDisplay.expertise.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-slate-700/50">
+                  <div className="flex flex-wrap gap-1">
+                    {assignmentDisplay.expertise.slice(0, 2).map((skill: string, i: number) => (
+                      <span key={i} className="px-1.5 py-0.5 bg-slate-800 rounded text-[9px] text-slate-400 truncate max-w-[70px]">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       <div 
         onClick={() => onAssign && onAssign()}
@@ -357,6 +471,8 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   onExpertCreated,
   onSelectExpert,
   onDeleteExpert,
+  globalGenerationState,
+  onGenerationStateChange,
 }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -368,6 +484,12 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   // Center panel view state (org chart vs team chat)
   const [centerPanelView, setCenterPanelView] = useState<CenterPanelView>('orgChart');
   
+  // Emergent Chat (Oracle mode) state
+  const [showEmergentChat, setShowEmergentChat] = useState(false);
+  
+  // Collapsible sections state
+  const [rationaleCollapsed, setRationaleCollapsed] = useState(false);
+  
   // Team chat state - includes agentRole for display
   const [teamChatMessages, setTeamChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; agentName?: string; agentAvatar?: string; agentRole?: string }>>([]);
   const [teamChatInput, setTeamChatInput] = useState('');
@@ -375,7 +497,19 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<{ agentName: string; agentAvatar: string; agentRole: string; content: string } | null>(null);
   const [synthesizing, setSynthesizing] = useState(false);
+  const [chatDepartmentFilter, setChatDepartmentFilter] = useState<string>('all');
   const chatEndRef = React.useRef<HTMLDivElement>(null);
+  
+  // Get unique departments from structure nodes
+  const chatDepartments = React.useMemo(() => {
+    const depts = new Set<string>();
+    structure.nodes.forEach(node => {
+      if ((node as { department?: string }).department) {
+        depts.add((node as { department?: string }).department!);
+      }
+    });
+    return ['all', ...Array.from(depts)];
+  }, [structure.nodes]);
   
   // Auto-scroll chat to bottom when new messages arrive
   React.useEffect(() => {
@@ -479,18 +613,24 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
   // Save role assignments whenever they change
   useEffect(() => {
     if (teamId && Object.keys(assignments).length > 0) {
-      const assignmentsToSave: RoleAssignment[] = Object.entries(assignments).map(([nodeId, assignment]) => ({
-        nodeId,
-        expertId: assignment.expert?.id || null,
-        customAgentId: assignment.customAgent?.id || null,
-        legendId: assignment.legend?.id || null,
-        humanName: assignment.human?.name || null,
-        humanEmail: assignment.human?.email || null,
-        humanTitle: assignment.human?.title || null,
-      }));
+      const assignmentsToSave: RoleAssignment[] = Object.entries(assignments).map(([nodeId, assignment]) => {
+        // Find the node in structure to get department and role title
+        const node = structure.nodes.find(n => n.id === nodeId) as { id: string; data?: { label?: string }; department?: string } | undefined;
+        return {
+          nodeId,
+          expertId: assignment.expert?.id || null,
+          customAgentId: assignment.customAgent?.id || null,
+          legendId: assignment.legend?.id || null,
+          humanName: assignment.human?.name || null,
+          humanEmail: assignment.human?.email || null,
+          humanTitle: assignment.human?.title || null,
+          department: node?.department || null,
+          roleTitle: node?.data?.label || null,
+        };
+      });
       saveRoleAssignments(teamId, assignmentsToSave);
     }
-  }, [teamId, assignments]);
+  }, [teamId, assignments, structure.nodes]);
 
   const handleAddSource = async () => {
     if (!teamId || !newSourceTitle.trim() || !newSourceContent.trim()) return;
@@ -662,6 +802,18 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       currentRole: '',
       completed: [],
     });
+    
+    // Update global generation state for persistent progress across navigation
+    if (onGenerationStateChange) {
+      onGenerationStateChange({
+        isGenerating: true,
+        teamId: teamId || null,
+        teamName: context.name || null,
+        current: 0,
+        total: unassignedNodes.length,
+        currentRole: '',
+      });
+    }
 
     // Accumulate all new assignments to ensure they're all applied
     const newAssignments: NodeAssignment = {};
@@ -677,12 +829,24 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       const node = unassignedNodes[i];
       const roleName = node.role;
 
-      // Update progress - starting this role
+      // Update progress - starting this role (local and global)
       setBulkGenerationProgress(prev => prev ? {
         ...prev,
         current: i + 1,
         currentRole: roleName,
       } : null);
+      
+      // Update global state
+      if (onGenerationStateChange) {
+        onGenerationStateChange({
+          isGenerating: true,
+          teamId: teamId || null,
+          teamName: context.name || null,
+          current: i + 1,
+          total: unassignedNodes.length,
+          currentRole: roleName,
+        });
+      }
 
       try {
         console.log(`Generating agent ${i + 1}/${unassignedNodes.length}: ${roleName}`);
@@ -755,13 +919,20 @@ const TeamBuilder: React.FC<TeamBuilderProps> = ({
       bulkGeneratingRef.current = false;
     }, 1000);
 
-    // Generation complete
+    // Generation complete - clear local and global state
     setGeneratingAllAgents(false);
+    if (onGenerationStateChange) {
+      onGenerationStateChange(null);
+    }
   };
 
   const handleCancelBulkGeneration = () => {
     cancelBulkGenerationRef.current = true;
     setCancelBulkGeneration(true);
+    // Also clear global generation state when cancelled
+    if (onGenerationStateChange) {
+      onGenerationStateChange(null);
+    }
   };
 
   const handleSendRoleChat = async () => {
@@ -1346,15 +1517,30 @@ Be concise but thorough. Use markdown formatting.`;
 
           {structure?.rationale && structure.rationale.length > 0 && (
             <div className="mt-8 pt-6 border-t border-slate-800">
-              <h3 className="text-xs font-mono text-purple-400 uppercase tracking-widest mb-3">AI Rationale</h3>
-              <ul className="space-y-3">
-                {structure.rationale.map((point, i) => (
-                  <li key={i} className="text-slate-400 text-xs leading-relaxed flex gap-2">
-                    <span className="text-purple-500">•</span>
-                    {point}
-                  </li>
-                ))}
-              </ul>
+              <button 
+                onClick={() => setRationaleCollapsed(!rationaleCollapsed)}
+                className="w-full flex items-center justify-between text-xs font-mono text-purple-400 uppercase tracking-widest mb-3 hover:text-purple-300 transition-colors"
+              >
+                <span>AI Rationale</span>
+                <svg 
+                  className={`w-4 h-4 transition-transform ${rationaleCollapsed ? '' : 'rotate-180'}`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {!rationaleCollapsed && (
+                <ul className="space-y-3 animate-in slide-in-from-top-2 duration-200">
+                  {structure.rationale.map((point, i) => (
+                    <li key={i} className="text-slate-400 text-xs leading-relaxed flex gap-2">
+                      <span className="text-purple-500">•</span>
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 
@@ -1436,6 +1622,13 @@ Be concise but thorough. Use markdown formatting.`;
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
               Team Chat
+            </button>
+            <button
+              onClick={() => setShowEmergentChat(true)}
+              className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 bg-gradient-to-r from-amber-500/20 to-purple-500/20 text-amber-400 hover:from-amber-500/30 hover:to-purple-500/30 border border-amber-500/30 hover:border-amber-500/50"
+            >
+              <span>⚡</span>
+              Oracle Mode
             </button>
           </div>
 
@@ -1552,6 +1745,26 @@ Be concise but thorough. Use markdown formatting.`;
                 </div>
               </div>
               
+              {/* Department Filter Bar */}
+              <div className="shrink-0 px-4 py-2 border-b border-slate-800/50 bg-slate-900/40 flex items-center gap-3">
+                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Department:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {chatDepartments.map(dept => (
+                    <button
+                      key={dept}
+                      onClick={() => setChatDepartmentFilter(dept)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all ${
+                        chatDepartmentFilter === dept
+                          ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/30'
+                          : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700'
+                      }`}
+                    >
+                      {dept === 'all' ? '👥 All Teams' : dept}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
               {/* Agent Roster - FIXED */}
               <div className="shrink-0 p-3 border-b border-slate-800 bg-slate-900/30">
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -1559,6 +1772,9 @@ Be concise but thorough. Use markdown formatting.`;
                     const agent = assignment?.customAgent || assignment?.expert;
                     if (!agent) return null;
                     const node = structure.nodes.find(n => n.id === nodeId);
+                    const nodeDept = (node as { department?: string })?.department;
+                    // Filter by department
+                    if (chatDepartmentFilter !== 'all' && nodeDept !== chatDepartmentFilter) return null;
                     return (
                       <button 
                         key={nodeId}
@@ -1751,6 +1967,19 @@ Be concise but thorough. Use markdown formatting.`;
                 );
                 const category = inferCategory(expert);
                 const colors = CATEGORY_COLORS[category];
+                // Shorten role title for display
+                const shortRole = expert.role ? expert.role
+                  .replace(/^Chief /, '')
+                  .replace(/^VP of /, '')
+                  .replace(/^Vice President of /, '')
+                  .replace(/^Director of /, '')
+                  .replace(/^Head of /, '')
+                  .replace(/^Senior /, 'Sr. ')
+                  .replace(/ Officer$/, '')
+                  .replace(/ Executive$/, '')
+                  .slice(0, 20) + (expert.role.length > 20 ? '' : '')
+                : null;
+                
                 return (
                   <div
                     key={expert.id}
@@ -1761,34 +1990,25 @@ Be concise but thorough. Use markdown formatting.`;
                       setHoveredExpert(expert);
                     }}
                     onMouseLeave={() => setHoveredExpert(null)}
-                    className={`group relative flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                      isAssigned 
-                        ? 'bg-slate-800/50 border-green-500/30 hover:border-green-500/50' 
-                        : 'bg-slate-800/50 border-slate-700 hover:border-cyan-500/50'
-                    }`}
+                    className={`group relative flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer bg-slate-800/50 border-slate-700 hover:border-cyan-500/50`}
                   >
-                    {/* Role label in top right */}
-                    {expert.role && (
-                      <span className="absolute top-1.5 right-2 text-[8px] font-mono text-slate-500 uppercase tracking-wider truncate max-w-[100px]">
-                        {expert.role.replace(/^(Chief |VP of |Director of |Head of )/, '').slice(0, 15)}
-                      </span>
-                    )}
                     <img
                       src={expert.avatarUrl}
                       alt={expert.name}
-                      className="w-10 h-10 rounded-lg object-cover border border-slate-600"
+                      className="w-14 h-14 rounded-xl object-cover border-2 border-slate-600 flex-shrink-0"
                     />
-                    <div className="flex-1 min-w-0 mt-2">
-                      <p className="text-white text-sm font-medium truncate">{expert.name}</p>
-                      <p className="text-slate-500 text-[10px] truncate uppercase font-mono">{expert.essence}</p>
+                    <div className="flex-1 min-w-0 py-0.5">
+                      <p className="text-white text-sm font-bold truncate">{expert.name}</p>
+                      {shortRole && (
+                        <p className="text-cyan-400 text-[11px] font-medium truncate mt-0.5" title={expert.role}>
+                          {shortRole}
+                        </p>
+                      )}
                       <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${colors.bg} ${colors.text}`}>
                         {category}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {isAssigned && (
-                        <span className="text-green-500 text-xs">✓</span>
-                      )}
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       {onDeleteExpert && (
                         <button
                           onClick={(e) => {
@@ -2640,6 +2860,18 @@ Be concise but thorough. Use markdown formatting.`;
           )}
           <p className="text-[9px] text-cyan-500 mt-3 uppercase tracking-wider">Click to view profile</p>
         </div>
+      )}
+
+      {/* Emergent Chat (Oracle Mode) */}
+      {showEmergentChat && (
+        <EmergentChat
+          teamAgents={Object.values(assignments)
+            .map(a => a?.customAgent || a?.expert)
+            .filter((a): a is ExpertPersona => !!a)}
+          legendaryAdvisors={LEGENDS}
+          teamContext={context?.description}
+          onClose={() => setShowEmergentChat(false)}
+        />
       )}
     </div>
   );

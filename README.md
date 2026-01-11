@@ -25,7 +25,7 @@ ExpertForge transforms generic AI outputs into **domain-specific expert personas
 - 👥 **Dynamic Advisory Teams** - Generate 5-12 node hierarchical team structures that scale based on company size
 - 📊 **Interactive Org Charts** - React Flow visualization with role-based color coding and Dagre layout
 - 💬 **Team Chat with Cascading Responses** - Chat with all agents simultaneously; they @mention each other and respond in sequence
-- ⚡ **Oracle Mode (Emergent Chat)** - Structured intellectual discourse system that assembles optimal debate panels to produce novel insights through framework collision
+- ⚡ **Silent Director Mode** - AI orchestrator animates expert personas to debate naturally from authentic worldviews; includes debate staging, sequential streaming, and actionable summaries
 - 🏢 **Department Filtering** - Filter team chat by department (Marketing, Sales, Technology, etc.)
 - 🎯 **Team-Scoped Agents** - Agents are filtered by team, keeping workspaces separate
 - 📋 **Thread Synthesis** - AI-powered summarization of chat discussions into actionable reports
@@ -121,21 +121,26 @@ Click any node in the org chart to open the Role Workspace:
 - **Right Panel**: Knowledge sources and quick actions
 - **Persistence**: Assignments save automatically to localStorage
 
-### Oracle Mode (Emergent Chat)
+### Silent Director Mode (Oracle Mode)
 
-A structured intellectual discourse system that transforms how teams make decisions:
+An AI orchestrator that animates expert personas to debate naturally from their authentic worldviews:
 
-- **Question Analysis**: AI analyzes your question to identify domains, tensions, and cognitive needs
-- **Panel Selection**: Automatically assembles optimal debate panel from team agents + legendary advisors
-- **Stance Assignment**: Assigns roles (Advocate, Skeptic, Devil's Advocate, Synthesizer) to ensure productive friction
-- **Cognitive Diversity**: Ensures Sternberg's Triarchic styles (Analytical, Creative, Practical) are represented
-- **Structured Discourse Phases**:
-  1. Position Statements - Each expert shares their stance
-  2. Directed Challenges - Experts challenge each other directly
-  3. Red Team Intervention - Challenge shared assumptions
-  4. Synthesis - Integration of perspectives
-  5. Emergence Detection - Identify novel insights
-- **Emergence Report**: Detailed analysis of whether genuine intellectual emergence occurred
+- **Debate Stage Structuring**: AI clarifies your raw input into a proper debate format
+  - Clarified question (what you're really asking)
+  - User intent (what you're trying to decide)
+  - Desired outcome (what success looks like)
+  - Key considerations (factors to address)
+- **Natural Persona Debate**: No assigned stances—friction emerges from worldview collision
+- **Sequential Streaming**: Personas speak one at a time with visual "thinking" indicator
+- **Left/Right Chat Layout**: WhatsApp-style alternating bubbles for easy reading
+- **Short Descriptors**: 2-4 word context under each speaker's name
+- **File Upload for Context**: Attach `.txt`, `.md`, `.json` files (up to 50KB) for personas to reference
+- **Debate Summary**: Structured output capturing:
+  - Key insights and agreements
+  - Productive tensions
+  - Specific recommendations
+  - Per-persona contributions
+  - Bottom line synthesis
 
 ### Legends Library
 
@@ -300,6 +305,11 @@ npx tsc --noEmit
 - [x] ~~Dynamic org chart scaling (5-12 nodes)~~ ✅ Implemented
 - [x] ~~Famous figure detection with real avatars~~ ✅ Implemented
 - [x] ~~Unified profile card component~~ ✅ Implemented
+- [x] ~~Silent Director Mode (natural persona debates)~~ ✅ Implemented
+- [x] ~~Debate stage structuring~~ ✅ Implemented
+- [x] ~~Sequential streaming with thinking indicators~~ ✅ Implemented
+- [x] ~~Left/right alternating chat layout~~ ✅ Implemented
+- [x] ~~File upload for debate context~~ ✅ Implemented
 - [ ] Sub-agent support for specialized role assistants
 - [ ] Export team configurations as JSON
 - [ ] Role analytics and performance tracking

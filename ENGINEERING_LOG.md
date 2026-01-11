@@ -1,8 +1,8 @@
 # ExpertForge Engineering Log
 
 **Project**: ExpertForge - AI Expert Persona & Advisory Team Builder  
-**Last Updated**: January 10, 2026  
-**Status**: Active Development (Oracle Mode Released)
+**Last Updated**: January 11, 2026  
+**Status**: Active Development (Silent Director Mode Released)
 
 ---
 
@@ -103,6 +103,94 @@ ExpertForge is an AI-powered platform that generates detailed expert personas an
 ---
 
 ## Recent Development Sessions
+
+### Session: January 10-11, 2026 (Night) - Silent Director Mode
+
+#### Overview
+Complete reimagining of Oracle Mode as "Silent Director" - an AI orchestrator that animates expert personas to debate naturally from their authentic perspectives without assigned stances.
+
+#### Features Implemented
+
+1. **Silent Director Mode Core**
+   - Replaced stance-based discourse with natural persona-driven debate
+   - New `SILENT_DIRECTOR_PROMPT` - AI orchestrates without speaking
+   - Personas debate from authentic worldviews (coreBeliefs, mentalModels, expertise)
+   - No assigned positions - friction emerges naturally from worldview collision
+
+2. **Debate Stage Structuring**
+   - New `DebateStage` type to structure raw user input
+   - `structureDebateStage()` function extracts:
+     - Clarified question (what user is really asking)
+     - User intent (what they're trying to decide)
+     - Desired outcome (what success looks like)
+     - Debate format (strategic decision, exploration, problem-solving, etc.)
+     - Key considerations (factors to address)
+   - Debate header displays structured context at top of discourse
+
+3. **Sequential Streaming (One-at-a-Time)**
+   - New `generateSingleExchange()` function - generates ONE persona response at a time
+   - `getNextSpeaker()` determines who speaks next (round-robin)
+   - Visual "thinking" indicator shows current speaker with bouncing dots
+   - 800ms pause between exchanges for readability
+   - Current speaker highlighted in panel chips with cyan ring
+
+4. **Left/Right Alternating Chat Layout**
+   - First persona messages on left (dark slate bubbles)
+   - Second persona messages on right (purple/cyan gradient bubbles)
+   - WhatsApp-style message tails (rounded corners with small notch)
+   - Distinct visual styling per side for easy scanning
+
+5. **Short Descriptors Under Names**
+   - `getShortDescriptor()` extracts 2-4 word description from persona
+   - Shows under name: "Elon Musk 🏆 / First-principles thinker"
+   - Uses essence for legends, cognitive_style for custom agents
+   - Provides instant context about speaker's perspective
+
+6. **File Upload for Context**
+   - Upload `.txt`, `.md`, `.json` files (max 50KB)
+   - Content injected into debate context
+   - Personas can reference uploaded company info, docs, etc.
+   - Shows file name and size when attached
+   - Easy removal with X button
+
+7. **Debate Summary (Replaces Red Team)**
+   - `generateDebateSummary()` produces structured JSON
+   - Captures: keyInsights, agreements, tensions, recommendations
+   - Contributions per persona
+   - Bottom line synthesis
+   - Clean summary view with categorized sections
+
+#### Technical Changes
+
+**New Types (`types.ts`)**
+- `DebateStage` - structured debate format
+- `DebateExchange` - individual message in debate
+- `DebateSummary` - end-of-debate summary
+- `SilentDirectorSession` - session state with debateStage
+
+**New Functions (`discourseService.ts`)**
+- `structureDebateStage(rawInput, context)` - AI structures user input
+- `generateSingleExchange(persona, debateStage, previousExchanges, allPersonas)` - one response
+- `getNextSpeaker(personas, previousExchanges)` - determines next speaker
+- `generateDebateSummary(topic, exchanges, personas)` - summary generation
+- `selectSilentDirectorPanel()` - panel selection without stances
+
+**UI Changes (`EmergentChat.tsx`)**
+- Added `uploadedFile` state and `fileInputRef`
+- Added `currentSpeaker` state for streaming indicator
+- Added `getShortDescriptor()` helper function
+- Added `handleFileUpload()` and `removeUploadedFile()` handlers
+- Added `generateStreamingExchanges()` for sequential generation
+- Updated `renderInputView()` with file upload UI
+- Updated `renderDiscourseView()` with left/right layout
+- Added debate stage header with structured topic display
+
+#### Files Modified
+- `types.ts` - Added DebateStage, updated SilentDirectorSession
+- `services/discourseService.ts` - New Silent Director functions
+- `components/EmergentChat.tsx` - Complete UI overhaul
+
+---
 
 ### Session: January 10, 2026 (Evening) - UI/UX Polish & Department Filtering
 
@@ -408,6 +496,18 @@ VITE_STRIPE_PUBLISHABLE_KEY=<stripe_key>
 ---
 
 ## Changelog
+
+### v0.5.0 (January 11, 2026) - Silent Director Mode
+- Complete reimagining of Oracle Mode as "Silent Director"
+- Personas debate naturally from authentic worldviews (no assigned stances)
+- Debate Stage structuring - AI clarifies user intent and desired outcome
+- Sequential streaming - one persona speaks at a time with thinking indicator
+- Left/right alternating chat layout (WhatsApp-style)
+- Short descriptors under persona names for instant context
+- File upload for context (.txt, .md, .json up to 50KB)
+- Debate summary replaces red team (insights, agreements, tensions, recommendations)
+- New types: DebateStage, DebateExchange, DebateSummary
+- New functions: structureDebateStage, generateSingleExchange, getNextSpeaker
 
 ### v0.4.1 (January 10, 2026)
 - Added department field to database schema (migration 004)

@@ -17,6 +17,10 @@ import {
   DiscourseSession,
   CognitiveStyle,
   NaturalOrientation,
+  DebateExchange,
+  DebateSummary,
+  SilentDirectorSession,
+  DebateStage,
 } from "../types";
 
 // Stance prompts injected into expert system prompts during discourse
@@ -821,4 +825,366 @@ export function createDiscourseSession(
     createdAt: new Date(),
     updatedAt: new Date(),
   };
+}
+
+// =============================================================================
+// SILENT DIRECTOR MODE
+// =============================================================================
+
+/**
+ * The Silent Director Prompt - orchestrates natural debate without assigned stances
+ */
+/**
+ * Structure raw user input into a proper debate format
+ */
+export async function structureDebateStage(rawInput: string, context?: string): Promise<DebateStage> {
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+
+  const prompt = `
+You are a debate architect. Take this raw user input and structure it into a proper debate format.
+
+## RAW USER INPUT
+"${rawInput}"
+${context ? `\nADDITIONAL CONTEXT: ${context}` : ''}
+
+## YOUR TASK
+Extract and clarify what the user actually wants to explore. Return JSON:
+
+{
+  "clarifiedQuestion": "A clear, specific question that captures what the user is really asking",
+  "userIntent": "What the user is trying to decide, understand, or solve (1-2 sentences)",
+  "desiredOutcome": "What a successful debate would produce for this user (1-2 sentences)",
+  "debateFormat": "The type of discourse needed: 'strategic decision', 'exploration', 'problem-solving', 'devil's advocate', or 'brainstorm'",
+  "keyConsiderations": ["factor 1", "factor 2", "factor 3"] // 3-5 key factors the debate should address
+}
+
+Be specific. Turn vague inputs into actionable debate topics.
+`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: prompt,
+    config: { responseMimeType: "application/json" },
+  });
+
+  try {
+    const parsed = JSON.parse(response.text || '{}');
+    return {
+      rawInput,
+      clarifiedQuestion: parsed.clarifiedQuestion || rawInput,
+      userIntent: parsed.userIntent || 'Explore this topic from multiple expert perspectives',
+      desiredOutcome: parsed.desiredOutcome || 'Actionable insights and recommendations',
+      debateFormat: parsed.debateFormat || 'exploration',
+      keyConsiderations: parsed.keyConsiderations || [],
+    };
+  } catch {
+    return {
+      rawInput,
+      clarifiedQuestion: rawInput,
+      userIntent: 'Explore this topic',
+      desiredOutcome: 'Gain clarity and actionable insights',
+      debateFormat: 'exploration',
+      keyConsiderations: [],
+    };
+  }
+}
+
+export const SILENT_DIRECTOR_PROMPT = `
+You are the Silent Director. You animate ONE persona at a time.
+
+## ANIMATION RULES
+
+1. **Authentic voice** - The persona speaks from their genuine worldview, beliefs, and expertise
+2. **Varied length** - Responses should feel natural: some brief and punchy (2-3 sentences), some elaborate (a full paragraph). Match the persona's style and what the moment calls for.
+3. **Specific and actionable** - Name real examples, frameworks, companies, numbers when relevant
+4. **Build on what came before** - Reference and engage with previous points directly
+5. **Natural disagreement** - Challenge ideas to improve them, not to win
+
+## OUTPUT FORMAT
+
+Output ONLY the persona's response. No name prefix, no formatting, no narrator text.
+Just their words, spoken in first person, in character.
+`;
+
+/**
+ * Generate a SINGLE exchange from the next persona in the debate
+ * This enables streaming one response at a time
+ */
+export async function generateSingleExchange(
+  persona: ExpertPersona,
+  debateStage: DebateStage,
+  previousExchanges: DebateExchange[],
+  allPersonas: ExpertPersona[]
+): Promise<DebateExchange> {
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+
+  // Build persona context
+  const personaContext = `
+**${persona.name}** - ${persona.essence}
+Core Beliefs: ${persona.coreBeliefs?.slice(0, 3).join('; ') || 'Not specified'}
+Expertise: ${persona.expertiseMap?.deepMastery?.slice(0, 4).join(', ') || 'General expertise'}
+Mental Models: ${persona.thinking?.mentalModels?.slice(0, 3).map(m => m.name).join(', ') || 'Various frameworks'}
+Thinking Style: ${persona.thinking?.problemApproach || 'Analytical and thorough'}
+When Disagreeing: ${persona.personality?.interactionModes?.disagreeing || 'Direct but respectful'}
+Style: ${persona.personality?.quirks?.slice(0, 2).join('; ') || 'Thoughtful and direct'}
+`;
+
+  // Build conversation history
+  const historyText = previousExchanges.length > 0 
+    ? previousExchanges.map(e => `**${e.speakerName}:** ${e.content}`).join('\n\n')
+    : '';
+
+  const otherPersonas = allPersonas.filter(p => p.id !== persona.id).map(p => p.name).join(', ');
+  const isFirstSpeaker = previousExchanges.length === 0;
+  const lastSpeaker = previousExchanges.length > 0 ? previousExchanges[previousExchanges.length - 1].speakerName : null;
+
+  const prompt = `
+${SILENT_DIRECTOR_PROMPT}
+
+## YOU ARE NOW ANIMATING
+${personaContext}
+
+## THE DEBATE
+**Topic:** ${debateStage.clarifiedQuestion}
+**Goal:** ${debateStage.desiredOutcome}
+**Key Considerations:** ${debateStage.keyConsiderations.join(', ')}
+
+## OTHER PARTICIPANTS
+${otherPersonas}
+
+${isFirstSpeaker ? `
+## YOUR TASK
+You are opening this debate. Share your initial perspective on this topic.
+Be specific - name real examples, cite frameworks, propose concrete ideas.
+Vary your length naturally - this opening might be substantial (a paragraph) or punchy (a few sharp sentences).
+` : `
+## CONVERSATION SO FAR
+${historyText}
+
+## YOUR TASK
+Respond to what ${lastSpeaker} just said. You can:
+- Agree and build on their point with your own expertise
+- Challenge their reasoning with a specific counter-example
+- Ask a probing question that exposes a gap in their thinking
+- Offer a completely different angle based on your worldview
+
+Be specific. Engage with their actual words. Vary your response length naturally - sometimes a brief, punchy reply is more powerful.
+`}
+
+Remember: Output ONLY your response. No name prefix. Just speak in character.
+`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: prompt,
+  });
+
+  const content = (response.text || '').trim();
+
+  return {
+    id: `exchange-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    speakerName: persona.name,
+    speakerId: persona.id,
+    speakerAvatar: persona.avatarUrl,
+    content,
+    timestamp: new Date(),
+  };
+}
+
+/**
+ * Determine the next speaker in the debate (simple round-robin with some variation)
+ */
+export function getNextSpeaker(
+  personas: ExpertPersona[],
+  previousExchanges: DebateExchange[]
+): ExpertPersona {
+  if (previousExchanges.length === 0) {
+    return personas[0]; // First persona starts
+  }
+  
+  const lastSpeakerId = previousExchanges[previousExchanges.length - 1].speakerId;
+  const lastIndex = personas.findIndex(p => p.id === lastSpeakerId);
+  
+  // Simple round-robin for now
+  const nextIndex = (lastIndex + 1) % personas.length;
+  return personas[nextIndex];
+}
+
+/**
+ * Generate a summary of the debate
+ */
+export async function generateDebateSummary(
+  topic: string,
+  exchanges: DebateExchange[],
+  personas: ExpertPersona[]
+): Promise<DebateSummary> {
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || '' });
+
+  const exchangeText = exchanges.map(e => `**${e.speakerName}:** ${e.content}`).join('\n\n');
+
+  const prompt = `
+Analyze this debate and capture what emerged from it.
+
+## TOPIC
+"${topic}"
+
+## PARTICIPANTS
+${personas.map(p => `- **${p.name}**: ${p.essence}`).join('\n')}
+
+## THE DEBATE
+${exchangeText}
+
+## YOUR TASK
+
+Produce a comprehensive debate summary. Return as JSON with this exact structure:
+
+{
+  "keyInsights": ["insight 1", "insight 2", ...],
+  "agreements": ["point of agreement 1", ...],
+  "tensions": ["productive tension 1", ...],
+  "recommendations": ["specific actionable recommendation 1", ...],
+  "contributions": {
+    "${personas[0]?.name || 'Expert 1'}": "their unique contribution",
+    "${personas[1]?.name || 'Expert 2'}": "their unique contribution"
+  },
+  "bottomLine": "One paragraph synthesis: the best path forward given everything discussed"
+}
+
+Guidelines:
+- keyInsights: Novel understandings that emerged from the collision of these minds
+- agreements: Where they found common ground
+- tensions: Valuable disagreements that remain (not failures - productive tensions)
+- recommendations: Concrete, actionable steps with specifics (names, numbers, timeframes when possible)
+- contributions: What each persona uniquely brought to the discussion
+- bottomLine: The actionable takeaway the user should act on
+
+Be concise but thorough.
+`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+    },
+  });
+
+  try {
+    const parsed = JSON.parse(response.text || '{}');
+    return {
+      id: `summary-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      topic,
+      content: response.text || '',
+      keyInsights: parsed.keyInsights || [],
+      agreements: parsed.agreements || [],
+      tensions: parsed.tensions || [],
+      recommendations: parsed.recommendations || [],
+      contributions: parsed.contributions || {},
+      bottomLine: parsed.bottomLine || '',
+      participants: personas.map(p => p.name),
+      exchangeCount: exchanges.length,
+      createdAt: new Date(),
+    };
+  } catch {
+    return {
+      id: `summary-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      topic,
+      content: response.text || 'Unable to generate summary',
+      keyInsights: [],
+      agreements: [],
+      tensions: [],
+      recommendations: [],
+      contributions: {},
+      bottomLine: 'Summary generation encountered an error.',
+      participants: personas.map(p => p.name),
+      exchangeCount: exchanges.length,
+      createdAt: new Date(),
+    };
+  }
+}
+
+/**
+ * Create a new Silent Director session
+ */
+export function createSilentDirectorSession(
+  topic: string,
+  personas: ExpertPersona[],
+  context?: string
+): SilentDirectorSession {
+  return {
+    id: `silent-director-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    topic,
+    context,
+    personas,
+    exchanges: [],
+    status: 'active',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
+/**
+ * Select panel for Silent Director mode (no stance assignment)
+ * Returns personas sorted by relevance but without assigned stances
+ */
+export async function selectSilentDirectorPanel(
+  question: string,
+  teamAgents: ExpertPersona[],
+  legendaryAdvisors: Legend[],
+  context?: string,
+  maxPanelSize: number = 3
+): Promise<{
+  personas: ExpertPersona[];
+  rationale: string;
+  analysis: QuestionAnalysis;
+}> {
+  // Step 1: Analyze the question
+  const analysis = await analyzeQuestion(question, context);
+
+  // Step 2: Convert legends to expert format and combine candidates
+  const legendExperts = legendaryAdvisors.map(legendToExpert);
+  const candidates = [...teamAgents, ...legendExperts];
+
+  // Step 3: Score each candidate
+  const scored = candidates.map(expert => ({
+    expert,
+    score: scoreExpertForQuestion(expert, analysis),
+  }));
+
+  // Step 4: Sort by score and take top candidates
+  scored.sort((a, b) => b.score - a.score);
+  let selectedExperts = scored.slice(0, maxPanelSize).map(s => s.expert);
+
+  // Step 5: Ensure cognitive diversity (still valuable for natural friction)
+  selectedExperts = ensureCognitiveDiversity(selectedExperts, candidates);
+
+  // Step 6: Limit to max panel size
+  selectedExperts = selectedExperts.slice(0, maxPanelSize);
+
+  // Step 7: Generate rationale (without stance info)
+  const rationale = generateSilentDirectorRationale(selectedExperts, analysis);
+
+  return { personas: selectedExperts, rationale, analysis };
+}
+
+/**
+ * Generate rationale for Silent Director panel selection
+ */
+function generateSilentDirectorRationale(personas: ExpertPersona[], analysis: QuestionAnalysis): string {
+  const parts: string[] = [];
+
+  parts.push(`Panel assembled for ${analysis.type} question covering ${analysis.domains.join(', ')}.`);
+
+  const cognitiveStyles = personas.map(p => p.cognitive_style).filter(Boolean);
+  const uniqueStyles = [...new Set(cognitiveStyles)];
+  parts.push(`Cognitive diversity: ${uniqueStyles.join(', ') || 'mixed'}.`);
+
+  const legends = personas.filter(p => p.isLegend);
+  if (legends.length > 0) {
+    parts.push(`Legendary perspectives: ${legends.map(l => l.name).join(', ')}.`);
+  }
+
+  parts.push(`These minds will engage naturally based on their authentic worldviews.`);
+
+  return parts.join(' ');
 }

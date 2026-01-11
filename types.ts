@@ -609,3 +609,57 @@ export interface DiscourseSession {
   createdAt: Date;
   updatedAt: Date;
 }
+
+// =============================================================================
+// SILENT DIRECTOR MODE TYPES
+// =============================================================================
+
+// Individual exchange in Silent Director debate
+// Structured debate stage from raw user input
+export interface DebateStage {
+  rawInput: string;
+  clarifiedQuestion: string;
+  userIntent: string;
+  desiredOutcome: string;
+  debateFormat: string;
+  keyConsiderations: string[];
+}
+
+export interface DebateExchange {
+  id: string;
+  speakerName: string;
+  speakerId: string;
+  speakerAvatar?: string;
+  content: string;
+  timestamp: Date;
+}
+
+// Summary generated at the end of a debate
+export interface DebateSummary {
+  id: string;
+  topic: string;
+  content: string;
+  keyInsights: string[];
+  agreements: string[];
+  tensions: string[];
+  recommendations: string[];
+  contributions: Record<string, string>; // persona name -> their contribution
+  bottomLine: string;
+  participants: string[];
+  exchangeCount: number;
+  createdAt: Date;
+}
+
+// Silent Director session state
+export interface SilentDirectorSession {
+  id: string;
+  topic: string;
+  context?: string;
+  debateStage?: DebateStage;
+  personas: ExpertPersona[];
+  exchanges: DebateExchange[];
+  summary?: DebateSummary;
+  status: 'active' | 'paused' | 'complete';
+  createdAt: Date;
+  updatedAt: Date;
+}
